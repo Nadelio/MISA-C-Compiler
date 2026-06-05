@@ -1494,9 +1494,16 @@ static void cg_global_var(CodeGen *cg, AstNode *n) {
 			fprintf(cg->out, "\n");
 		} else {
 			int count = t->array_len > 0 ? t->array_len : 1;
+			Type *elem_t = t->base ? t->base : t;
+			int elem_sz = type_sizeof(elem_t);
+			if (elem_sz <= 0) elem_sz = 4;
+			// Here (sz + 3) / 4 does ensure its ceil during the sz division
 			fprintf(cg->out, "%s:\tres %s %d, 0\n", lbl,
-			    type_misa_name(t->base ? t->base : t), count);
+			    type_misa_name(t->base ? t->base : t), count * ((elem_sz + 3) / 4));
 		}
+	} else if (t->kind == TY_STRUCT || t->kind == TY_UNION) {
+		// same as above, (sz + 3) / 4 does ensure its ceil during the sz division
+		fprintf(cg->out, "%s:\tres u32t %d, 0\n", lbl, (sz + 3) / 4);
 	} else {
 		fprintf(cg->out, "%s:\tres %s 1, 0\n", lbl, type_misa_name(t));
 	}
