@@ -903,12 +903,16 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 			} else {
 				int cr = cg_expr(cg, n->u.call.callee, fl);
 				emit(cg, "tpr %s", temp_name(cr));
+				emit(cg, "sub %s, @__ical+", temp_name(cr));
+				fprintf(cg->out, "@__ical:\n");
 				emit(cg, "cal %s", temp_name(cr));
 				cg_free_temp(cg, cr);
 			}
 		} else {
 			int cr = cg_expr(cg, n->u.call.callee, fl);
 			emit(cg, "tpr %s", temp_name(cr));
+			emit(cg, "sub %s, @__ical+", temp_name(cr));
+			fprintf(cg->out, "@__ical:\n");
 			emit(cg, "cal %s", temp_name(cr));
 			cg_free_temp(cg, cr);
 		}
