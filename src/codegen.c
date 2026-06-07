@@ -1319,6 +1319,56 @@ static void cg_stmt(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 	}
 }
 
+static void cg_register_locals(CodeGen *cg, AstNode *n, FrameLayout *fl) {
+	if (!n) return;
+	if (n->kind == AST_VAR_DECL) {
+		if (!n->u.var.name || n->u.var.is_extern) return;
+		Symbol *sym = symtab_lookup_current(cg->symtab, n->u.var.name);
+		if (!sym)
+			sym = symtab_define(cg->symtab, n->u.var.name,
+			    SYM_VAR, n->u.var.var_type);
+		sym->is_global = 0;
+		FrameVar *fv = frame_find(fl, n->u.var.name);
+		if (fv) sym->fp_offset = fv->fp_offset;
+		return;
+	}
+	if (n->kind == AST_BLOCK) {
+		AstList *it = n->u.block.items;
+		while (it) {
+			cg_register_locals(cg, it->node, fl);
+			it = it->next;
+		}
+		return;
+	}
+	switch (n->kind) {
+	case AST_IF:
+		cg_register_locals(cg, n->u.if_stmt.then_stmt, fl);
+		cg_register_locals(cg, n->u.if_stmt.else_stmt, fl);
+		break;
+	case AST_WHILE: case AST_DO_WHILE:
+		cg_register_locals(cg, n->u.while_stmt.body, fl);
+		break;
+	case AST_FOR:
+		cg_register_locals(cg, n->u.for_stmt.init, fl);
+		cg_register_locals(cg, n->u.for_stmt.body, fl);
+		break;
+	case AST_SWITCH:
+		cg_register_locals(cg, n->u.switch_stmt.body, fl);
+		break;
+	case AST_CASE:
+		cg_register_locals(cg, n->u.case_stmt.stmt, fl);
+		break;
+	case AST_DEFAULT:
+		cg_register_locals(cg, n->u.default_stmt.stmt, fl);
+		break;
+	case AST_LABEL_STMT:
+		cg_register_locals(cg, n->u.label_stmt.stmt, fl);
+		break;
+	default:
+		break;
+	}
+}
+
 static void cg_func(CodeGen *cg, AstNode *n) {
 	if (!n->u.func.name) return;
 
@@ -1364,21 +1414,7 @@ static void cg_func(CodeGen *cg, AstNode *n) {
 	}
 
 	if (n->u.func.body) {
-		AstList *bl = n->u.func.body->u.block.items;
-		while (bl) {
-			if (bl->node && bl->node->kind == AST_VAR_DECL && bl->node->u.var.name) {
-				AstNode *vn = bl->node;
-				Symbol *sym = symtab_lookup_current(cg->symtab, vn->u.var.name);
-				if (!sym) {
-					sym = symtab_define(cg->symtab, vn->u.var.name,
-					    SYM_VAR, vn->u.var.var_type);
-				}
-				sym->is_global = 0;
-				FrameVar *fv = frame_find(&fl, vn->u.var.name);
-				if (fv) sym->fp_offset = fv->fp_offset;
-			}
-			bl = bl->next;
-		}
+		cg_register_locals(cg, n->u.func.body, &fl);
 	}
 
 	fprintf(cg->out, "\n");
