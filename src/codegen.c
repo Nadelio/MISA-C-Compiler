@@ -1043,6 +1043,12 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 				}
 			} else if (sym && sym->builtin_id == BUILTIN_TO_PA) {
 				emit(cg, "tpr a0");
+			} else if (sym && sym->builtin_id == BUILTIN_YIELD) {
+				emit(cg, "yield");
+			} else if (sym && sym->builtin_id == BUILTIN_EXIT) {
+				emit(cg, "exit");
+			} else if (sym && sym->builtin_id == BUILTIN_BREAK) {
+				emit(cg, "break");
 			} else if (sym && sym->builtin_id != BUILTIN_NONE) {
 				const BuiltinInfo *bi = builtin_lookup(sym->builtin_id);
 				if (bi) {
