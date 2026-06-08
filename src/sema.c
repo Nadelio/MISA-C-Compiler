@@ -522,6 +522,47 @@ void sema_init(Sema *s, SymTab *st) {
 	reg_builtin(s, "get_draw_delta",   BUILTIN_GET_DRAW_DELTA,   type_make_float(), 0);
 	reg_builtin(s, "set_rng_seed",     BUILTIN_SET_RNG_SEED,     type_make_void(),  1,
 	    type_make_int(0));
+
+	{
+		static const struct { const char *name; int val; } sysc[] = {
+			{ "SYS_PRINT_INT",             0  },
+			{ "SYS_PRINT_FLOAT",           1  },
+			{ "SYS_PRINT_STRING",          2  },
+			{ "SYS_DRAW_RECT",             3  },
+			{ "SYS_DRAW_TEXTURE",          4  },
+			{ "SYS_DRAW_TEXTURE_REGION",   5  },
+			{ "SYS_STORAGE_READ",          6  },
+			{ "SYS_STORAGE_WRITE",         7  },
+			{ "SYS_MEM_COPY",              8  },
+			{ "SYS_MEM_SET",               9  },
+			{ "SYS_PRESERVE_BACK_BUFFER",  10 },
+			{ "SYS_PRESERVE_FRONT_BUFFER", 11 },
+			{ "SYS_GET_INPUT",             12 },
+			{ "SYS_GET_UNIX_TIME",         13 },
+			{ "SYS_GET_RUNNING_TIME",      14 },
+			{ "SYS_GET_UPDATE_DELTA",      15 },
+			{ "SYS_GET_DRAW_DELTA",        16 },
+			{ "SYS_SET_RNG_SEED",          17 },
+			{ NULL, 0 }
+		};
+		int i;
+		for (i = 0; sysc[i].name; i++) {
+			Symbol *sym = symtab_define(s->symtab, sysc[i].name,
+			    SYM_ENUM_CONST, type_make_int(0));
+			sym->enum_value = sysc[i].val;
+		}
+	}
+
+	{
+		TypeParam *p = (TypeParam *)calloc(1, sizeof(TypeParam));
+		p->type = type_make_int(0);
+		Symbol *sym = symtab_define(s->symtab, "syscall", SYM_FUNC,
+		    type_make_function(type_make_int(0), p, 1));
+		sym->builtin_id = BUILTIN_SYSCALL;
+	}
+
+	reg_builtin(s, "to_pa", BUILTIN_TO_PA, type_make_int(0), 1,
+	    type_make_pointer(type_make_void()));
 }
 
 void sema_analyze(Sema *s, AstNode *unit) {

@@ -40,6 +40,36 @@ static const BuiltinInfo *builtin_lookup(BuiltinId id) {
 	return NULL;
 }
 
+typedef struct { int id; const char *name; } SyscallNameEntry;
+static const SyscallNameEntry syscall_name_table[] = {
+	{  0, "SYS_PRINT_INT"             },
+	{  1, "SYS_PRINT_FLOAT"           },
+	{  2, "SYS_PRINT_STRING"          },
+	{  3, "SYS_DRAW_RECT"             },
+	{  4, "SYS_DRAW_TEXTURE"          },
+	{  5, "SYS_DRAW_TEXTURE_REGION"   },
+	{  6, "SYS_STORAGE_READ"          },
+	{  7, "SYS_STORAGE_WRITE"         },
+	{  8, "SYS_MEM_COPY"              },
+	{  9, "SYS_MEM_SET"               },
+	{ 10, "SYS_PRESERVE_BACK_BUFFER"  },
+	{ 11, "SYS_PRESERVE_FRONT_BUFFER" },
+	{ 12, "SYS_GET_INPUT"             },
+	{ 13, "SYS_GET_UNIX_TIME"         },
+	{ 14, "SYS_GET_RUNNING_TIME"      },
+	{ 15, "SYS_GET_UPDATE_DELTA"      },
+	{ 16, "SYS_GET_DRAW_DELTA"        },
+	{ 17, "SYS_SET_RNG_SEED"          },
+	{ -1, NULL }
+};
+
+static const char *syscall_name_by_id(int id) {
+	int i;
+	for (i = 0; syscall_name_table[i].name; i++)
+		if (syscall_name_table[i].id == id) return syscall_name_table[i].name;
+	return NULL;
+}
+
 static void asm_type_add(CodeGen *cg, const char *label, const char *misa_type) {
 	if (cg->asm_type_count >= cg->asm_type_cap) {
 		cg->asm_type_cap = cg->asm_type_cap ? cg->asm_type_cap * 2 : 16;
@@ -990,7 +1020,30 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 		
 		if (n->u.call.callee->kind == AST_IDENT) {
 			Symbol *sym = symtab_lookup(cg->symtab, n->u.call.callee->u.ident.name);
-			if (sym && sym->builtin_id != BUILTIN_NONE) {
+			if (sym && sym->builtin_id == BUILTIN_SYSCALL) {
+				AstNode *num_node = n->u.call.args ? n->u.call.args->node : NULL;
+				const char *sname = NULL;
+				if (num_node) {
+					long long val = -1;
+					if (num_node->kind == AST_INT_LIT || num_node->kind == AST_CHAR_LIT)
+						val = num_node->u.int_lit.value;
+					else if (num_node->kind == AST_IDENT) {
+						Symbol *cs = symtab_lookup(cg->symtab, num_node->u.ident.name);
+						if (cs && cs->kind == SYM_ENUM_CONST) val = cs->enum_value;
+					}
+					if (val >= 0) sname = syscall_name_by_id((int)val);
+				}
+				if (!sname) {
+					fprintf(stderr, "error: syscall() first argument must be a compile-time SYS_* constant\n");
+					cg->had_error = 1;
+				} else {
+					for (i = 0; i < argc - 1; i++)
+						emit(cg, "mov %s, %s", arg_name(i), arg_name(i + 1));
+					emit(cg, "syscall %s", sname);
+				}
+			} else if (sym && sym->builtin_id == BUILTIN_TO_PA) {
+				emit(cg, "tpr a0");
+			} else if (sym && sym->builtin_id != BUILTIN_NONE) {
 				const BuiltinInfo *bi = builtin_lookup(sym->builtin_id);
 				if (bi) {
 					int j;
