@@ -566,7 +566,7 @@ void sema_init(Sema *s, SymTab *st) {
 
 	reg_builtin(s, "yield", BUILTIN_YIELD, type_make_void(), 0);
 	reg_builtin(s, "exit",  BUILTIN_EXIT,  type_make_void(), 0);
-	reg_builtin(s, "brk",   BUILTIN_BREAK, type_make_void(), 0);
+	reg_builtin(s, "break",   BUILTIN_BREAK, type_make_void(), 0);
 }
 
 void sema_analyze(Sema *s, AstNode *unit) {
