@@ -1,6 +1,6 @@
 int main(void) {
     yield();
-    brk();
+    break();
     exit();
     return 0;
 }
