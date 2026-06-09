@@ -7,6 +7,7 @@ While I wrote all the code myself, the github workflows and the comments in the 
 ## Contributors
 - Nadelio (Creator)
 - [mariusvn (Various bug fixes and feature improvements)](https://github.com/mariusvn)
+- [WillGarrison1 (`brk()` -> `break()`)](https://github.com/WillGarrison1)
 
 ## Dependencies
 - Clang (for compiling from source)
