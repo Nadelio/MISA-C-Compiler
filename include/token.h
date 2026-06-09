@@ -108,13 +108,19 @@ typedef enum {
  */
 typedef struct {
 	TokenType    type;
-	char        *text;  /* null-terminated source text of this token */
+	char        *text;        /* null-terminated source text of this token */
 	int          line;
 	int          col;
 	union {
 		long long    ival; /* TOK_LIT_INT / TOK_LIT_CHAR */
 		double       fval; /* TOK_LIT_FLOAT */
 	} u;
+	char        *doc_brief;   /* from /// @brief */
+	char        *doc_details; /* from /// @details */
+	char       **doc_param_names; /* from /// @param: parameter names (owned array) */
+	char       **doc_param_descs; /* from /// @param: parameter descriptions (owned array) */
+	int          doc_param_count;
+	char        *doc_return;  /* from /// @return */
 } Token;
 
 /*

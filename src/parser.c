@@ -558,6 +558,13 @@ static AstNode *parse_decl(Parser *p, int allow_func_def) {
 	int    is_static  = 0;
 	int    is_extern  = 0;
 
+	char *doc_brief        = p->cur.doc_brief;        p->cur.doc_brief        = NULL;
+	char *doc_details      = p->cur.doc_details;      p->cur.doc_details      = NULL;
+	char **doc_param_names = p->cur.doc_param_names;  p->cur.doc_param_names  = NULL;
+	char **doc_param_descs = p->cur.doc_param_descs;  p->cur.doc_param_descs  = NULL;
+	int    doc_param_count = p->cur.doc_param_count;  p->cur.doc_param_count  = 0;
+	char  *doc_return      = p->cur.doc_return;       p->cur.doc_return       = NULL;
+
 	for (;;) {
 		if (check(p, TOK_KW_TYPEDEF))  { is_typedef_sc = 1; advance(p); }
 		else if (check(p, TOK_KW_STATIC))  { is_static = 1; advance(p); }
@@ -637,11 +644,30 @@ static AstNode *parse_decl(Parser *p, int allow_func_def) {
 			}
 			expect(p, TOK_RBRACE);
 			symtab_pop(p->symtab);
-			n->u.func.body = blk;
+			n->u.func.body             = blk;
+			n->u.func.doc_brief        = doc_brief;
+			n->u.func.doc_details      = doc_details;
+			n->u.func.doc_param_names  = doc_param_names;
+			n->u.func.doc_param_descs  = doc_param_descs;
+			n->u.func.doc_param_count  = doc_param_count;
+			n->u.func.doc_return       = doc_return;
+			doc_brief = doc_details = doc_return = NULL;
+			doc_param_names = doc_param_descs = NULL;
+			doc_param_count = 0;
 			return n;
 		}
 
 		if (full->kind == TY_FUNCTION) {
+			{
+				int i;
+				for (i = 0; i < doc_param_count; i++) { free(doc_param_names[i]); free(doc_param_descs[i]); }
+			}
+			free(doc_brief); doc_brief = NULL;
+			free(doc_details); doc_details = NULL;
+			free(doc_param_names); doc_param_names = NULL;
+			free(doc_param_descs); doc_param_descs = NULL;
+			doc_param_count = 0;
+			free(doc_return); doc_return = NULL;
 			AstNode *n = ast_new(AST_FUNC_DECL, line);
 			n->u.func.name      = name;
 			n->u.func.func_type = full;
@@ -662,6 +688,16 @@ static AstNode *parse_decl(Parser *p, int allow_func_def) {
 			continue;
 		}
 
+		{
+			int i;
+			for (i = 0; i < doc_param_count; i++) { free(doc_param_names[i]); free(doc_param_descs[i]); }
+		}
+		free(doc_brief); doc_brief = NULL;
+		free(doc_details); doc_details = NULL;
+		free(doc_param_names); doc_param_names = NULL;
+		free(doc_param_descs); doc_param_descs = NULL;
+		doc_param_count = 0;
+		free(doc_return); doc_return = NULL;
 		AstNode *n = ast_new(AST_VAR_DECL, line);
 		n->u.var.name      = name;
 		n->u.var.var_type  = full;

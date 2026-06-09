@@ -2,6 +2,13 @@ _start:
 	cal main_
 	exit
 
+sbmk "foo_(num: i32t): i32t"
+##
+## Parameters:
+## > a0 - num, is i32t
+## Returns:
+## < a0 - return value, is i32t
+## Additional Implementation Notes:
 foo_:
 	sub sp, 4
 	mov ea, fp

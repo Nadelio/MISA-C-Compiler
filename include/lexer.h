@@ -60,6 +60,15 @@ typedef struct {
 	Token       lookahead;
 	int         has_lookahead;
 
+	/* Pending doc comment fields (transferred to the next token) */
+	char       *pending_doc_brief;
+	char       *pending_doc_details;
+	char      **pending_doc_param_names; /* @param: names */
+	char      **pending_doc_param_descs; /* @param: descriptions */
+	int         pending_doc_param_count;
+	int         pending_doc_param_cap;
+	char       *pending_doc_return;      /* @return */
+
 	/* Error flag */
 	int         had_error;
 } Lexer;

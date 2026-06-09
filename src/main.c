@@ -29,6 +29,7 @@ static void usage(const char *prog) {
 int main(int argc, char **argv) {
 	const char *input_path  = NULL;
 	const char *output_path = NULL;
+	int gen_doc = 0;
 	int i;
 
 	for (i = 1; i < argc; i++) {
@@ -37,6 +38,8 @@ int main(int argc, char **argv) {
 		} else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
 			usage(argv[0]);
 			return 0;
+		} else if (!strcmp(argv[i], "--doc") || !strcmp(argv[i], "-gd")) {
+			gen_doc = 1;
 		} else if (argv[i][0] != '-') {
 			input_path = argv[i];
 		} else {
@@ -108,6 +111,7 @@ int main(int argc, char **argv) {
 
 	CodeGen cg;
 	codegen_init(&cg, out, symtab);
+	cg.gen_doc = gen_doc;
 	codegen_emit(&cg, ast);
 	codegen_free(&cg);
 

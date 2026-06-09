@@ -31,12 +31,43 @@ static char advance_ch(Lexer *l) {
 	return c;
 }
 
+static void clear_pending_doc(Lexer *l) {
+	int i;
+	free(l->pending_doc_brief);   l->pending_doc_brief   = NULL;
+	free(l->pending_doc_details); l->pending_doc_details = NULL;
+	free(l->pending_doc_return);  l->pending_doc_return  = NULL;
+	for (i = 0; i < l->pending_doc_param_count; i++) {
+		free(l->pending_doc_param_names[i]);
+		free(l->pending_doc_param_descs[i]);
+	}
+	free(l->pending_doc_param_names); l->pending_doc_param_names = NULL;
+	free(l->pending_doc_param_descs); l->pending_doc_param_descs = NULL;
+	l->pending_doc_param_count = 0;
+	l->pending_doc_param_cap   = 0;
+}
+
+static void pending_doc_add_param(Lexer *l, const char *name, const char *desc) {
+	if (l->pending_doc_param_count >= l->pending_doc_param_cap) {
+		l->pending_doc_param_cap = l->pending_doc_param_cap ? l->pending_doc_param_cap * 2 : 4;
+		l->pending_doc_param_names = (char **)realloc(l->pending_doc_param_names,
+		    l->pending_doc_param_cap * sizeof(char *));
+		l->pending_doc_param_descs = (char **)realloc(l->pending_doc_param_descs,
+		    l->pending_doc_param_cap * sizeof(char *));
+	}
+	l->pending_doc_param_names[l->pending_doc_param_count] = strdup(name);
+	l->pending_doc_param_descs[l->pending_doc_param_count] = strdup(desc);
+	l->pending_doc_param_count++;
+}
+
 static void skip_whitespace_and_comments(Lexer *l) {
+	int in_doc_block = 0;
 	for (;;) {
 		while (l->pos < l->len && isspace((unsigned char)l->src[l->pos]))
 			advance_ch(l);
 
 		if (l->pos + 1 < l->len && l->src[l->pos] == '/' && l->src[l->pos+1] == '*') {
+			in_doc_block = 0;
+			clear_pending_doc(l);
 			advance_ch(l); advance_ch(l);
 			while (l->pos + 1 < l->len) {
 				if (l->src[l->pos] == '*' && l->src[l->pos+1] == '/') {
@@ -48,6 +79,58 @@ static void skip_whitespace_and_comments(Lexer *l) {
 			continue;
 		}
 		if (l->pos + 1 < l->len && l->src[l->pos] == '/' && l->src[l->pos+1] == '/') {
+			if (l->pos + 2 < l->len && l->src[l->pos+2] == '/') {
+				if (!in_doc_block) {
+					clear_pending_doc(l);
+					in_doc_block = 1;
+				}
+				advance_ch(l); advance_ch(l); advance_ch(l);
+				while (l->pos < l->len && (l->src[l->pos] == ' ' || l->src[l->pos] == '\t'))
+					advance_ch(l);
+				{
+					int start = l->pos;
+					while (l->pos < l->len && l->src[l->pos] != '\n')
+						advance_ch(l);
+					int len = l->pos - start;
+					char *line_buf = (char *)malloc(len + 1);
+					memcpy(line_buf, l->src + start, len);
+					line_buf[len] = '\0';
+					if (strncmp(line_buf, "@brief", 6) == 0) {
+						const char *p = line_buf + 6;
+						while (*p == ' ' || *p == '\t') p++;
+						free(l->pending_doc_brief);
+						l->pending_doc_brief = strdup(p);
+					} else if (strncmp(line_buf, "@details", 8) == 0) {
+						const char *p = line_buf + 8;
+						while (*p == ' ' || *p == '\t') p++;
+						free(l->pending_doc_details);
+						l->pending_doc_details = strdup(p);
+					} else if (strncmp(line_buf, "@param", 6) == 0) {
+						const char *p = line_buf + 6;
+						while (*p == ' ' || *p == '\t') p++;
+						const char *name_start = p;
+						while (*p && *p != ' ' && *p != '\t') p++;
+						int name_len = (int)(p - name_start);
+						if (name_len > 0) {
+							char *param_name = (char *)malloc(name_len + 1);
+							memcpy(param_name, name_start, name_len);
+							param_name[name_len] = '\0';
+							while (*p == ' ' || *p == '\t') p++;
+							pending_doc_add_param(l, param_name, p);
+							free(param_name);
+						}
+					} else if (strncmp(line_buf, "@return", 7) == 0) {
+						const char *p = line_buf + 7;
+						while (*p == ' ' || *p == '\t') p++;
+						free(l->pending_doc_return);
+						l->pending_doc_return = strdup(p);
+					}
+					free(line_buf);
+				}
+				continue;
+			}
+			in_doc_block = 0;
+			clear_pending_doc(l);
 			while (l->pos < l->len && l->src[l->pos] != '\n') advance_ch(l);
 			continue;
 		}
@@ -57,11 +140,17 @@ static void skip_whitespace_and_comments(Lexer *l) {
 
 static Token make_token(TokenType type, const char *text, int line, int col) {
 	Token t;
-	t.type = type;
-	t.text = strdup(text);
-	t.line = line;
-	t.col  = col;
-	t.u.ival = 0;
+	t.type             = type;
+	t.text             = strdup(text);
+	t.line             = line;
+	t.col              = col;
+	t.u.ival           = 0;
+	t.doc_brief        = NULL;
+	t.doc_details      = NULL;
+	t.doc_param_names  = NULL;
+	t.doc_param_descs  = NULL;
+	t.doc_param_count  = 0;
+	t.doc_return       = NULL;
 	return t;
 }
 
@@ -427,6 +516,18 @@ void lexer_free(Lexer *l) {
 	for (i = 0; i < l->seen_count; i++) free(l->seen_includes[i]);
 	free(l->seen_includes);
 	if (l->has_lookahead) free(l->lookahead.text);
+	free(l->pending_doc_brief);
+	free(l->pending_doc_details);
+	free(l->pending_doc_return);
+	{
+		int i;
+		for (i = 0; i < l->pending_doc_param_count; i++) {
+			free(l->pending_doc_param_names[i]);
+			free(l->pending_doc_param_descs[i]);
+		}
+	}
+	free(l->pending_doc_param_names);
+	free(l->pending_doc_param_descs);
 }
 
 Token lexer_error(Lexer *l, const char *msg) {
@@ -591,12 +692,41 @@ Token lexer_next(Lexer *l) {
 		l->has_lookahead = 0;
 		return t;
 	}
-	return lex_one(l);
+	{
+		Token t = lex_one(l);
+		t.doc_brief            = l->pending_doc_brief;
+		t.doc_details          = l->pending_doc_details;
+		t.doc_param_names      = l->pending_doc_param_names;
+		t.doc_param_descs      = l->pending_doc_param_descs;
+		t.doc_param_count      = l->pending_doc_param_count;
+		t.doc_return           = l->pending_doc_return;
+		l->pending_doc_brief        = NULL;
+		l->pending_doc_details      = NULL;
+		l->pending_doc_param_names  = NULL;
+		l->pending_doc_param_descs  = NULL;
+		l->pending_doc_param_count  = 0;
+		l->pending_doc_param_cap    = 0;
+		l->pending_doc_return       = NULL;
+		return t;
+	}
 }
 
 const Token *lexer_peek(Lexer *l) {
 	if (!l->has_lookahead) {
-		l->lookahead    = lex_one(l);
+		l->lookahead = lex_one(l);
+		l->lookahead.doc_brief            = l->pending_doc_brief;
+		l->lookahead.doc_details          = l->pending_doc_details;
+		l->lookahead.doc_param_names      = l->pending_doc_param_names;
+		l->lookahead.doc_param_descs      = l->pending_doc_param_descs;
+		l->lookahead.doc_param_count      = l->pending_doc_param_count;
+		l->lookahead.doc_return           = l->pending_doc_return;
+		l->pending_doc_brief        = NULL;
+		l->pending_doc_details      = NULL;
+		l->pending_doc_param_names  = NULL;
+		l->pending_doc_param_descs  = NULL;
+		l->pending_doc_param_count  = 0;
+		l->pending_doc_param_cap    = 0;
+		l->pending_doc_return       = NULL;
 		l->has_lookahead = 1;
 	}
 	return &l->lookahead;

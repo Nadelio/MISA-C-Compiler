@@ -104,6 +104,12 @@ struct AstNode {
 			AstNode *body;        /* AST_BLOCK (NULL for decl) */
 			int      is_static;
 			int      is_extern;
+			char    *doc_brief;         /* from /// @brief, or NULL */
+			char    *doc_details;       /* from /// @details, or NULL */
+			char   **doc_param_names;   /* from /// @param: names (owned array) */
+			char   **doc_param_descs;   /* from /// @param: descriptions (owned array) */
+			int      doc_param_count;
+			char    *doc_return;        /* from /// @return, or NULL */
 		} func;
 
 		/* AST_VAR_DECL */
