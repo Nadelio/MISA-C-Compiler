@@ -1428,6 +1428,98 @@ static void cg_register_locals(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 	}
 }
 
+static void type_doc_str(const Type *t, char *buf, int bufsz) {
+	if (!t || t->kind == TY_VOID) {
+		snprintf(buf, bufsz, "void");
+	} else if (t->kind == TY_POINTER) {
+		char base[64];
+		type_doc_str(t->base, base, sizeof(base));
+		snprintf(buf, bufsz, "%s*", base);
+	} else {
+		snprintf(buf, bufsz, "%s", type_misa_name(t));
+	}
+}
+
+static void cg_emit_doc(CodeGen *cg, AstNode *n) {
+	const char *fname = n->u.func.name;
+	Symbol *fsym = symtab_lookup(cg->symtab, fname);
+	const char *flbl = (fsym && fsym->func_label) ? fsym->func_label : fname;
+
+	Type *ftype = n->u.func.func_type;
+	Type *ret_type = ftype ? ftype->base : NULL;
+	char ret_buf[64];
+	type_doc_str(ret_type, ret_buf, sizeof(ret_buf));
+
+	fprintf(cg->out, "sbmk \"%s(", flbl);
+	AstList *pl = n->u.func.params;
+	int first = 1;
+	while (pl) {
+		AstNode *pn = pl->node;
+		if (pn->u.var.name) {
+			char tbuf[64];
+			type_doc_str(pn->u.var.var_type, tbuf, sizeof(tbuf));
+			if (!first) fprintf(cg->out, ", ");
+			fprintf(cg->out, "%s: %s", pn->u.var.name, tbuf);
+			first = 0;
+		}
+		pl = pl->next;
+	}
+	fprintf(cg->out, "): %s\"\n", ret_buf);
+
+	if (n->u.func.doc_brief && n->u.func.doc_brief[0])
+		fprintf(cg->out, "## %s\n", n->u.func.doc_brief);
+	else
+		fprintf(cg->out, "##\n");
+
+	pl = n->u.func.params;
+	int has_params = 0;
+	{
+		AstList *tmp = pl;
+		while (tmp) { if (tmp->node->u.var.name) { has_params = 1; break; } tmp = tmp->next; }
+	}
+	if (!has_params) {
+		fprintf(cg->out, "## Parameters: NONE\n");
+	} else {
+		fprintf(cg->out, "## Parameters:\n");
+		int ai = 0;
+		while (pl && ai < 16) {
+			AstNode *pn = pl->node;
+			if (pn->u.var.name) {
+				char tbuf[64];
+				type_doc_str(pn->u.var.var_type, tbuf, sizeof(tbuf));
+				const char *desc = NULL;
+				int pi;
+				for (pi = 0; pi < n->u.func.doc_param_count; pi++) {
+					if (!strcmp(n->u.func.doc_param_names[pi], pn->u.var.name)) {
+						desc = n->u.func.doc_param_descs[pi];
+						break;
+					}
+				}
+				if (desc && desc[0])
+					fprintf(cg->out, "## > a%d - %s\n", ai, desc);
+				else
+					fprintf(cg->out, "## > a%d - %s, is %s\n", ai, pn->u.var.name, tbuf);
+				ai++;
+			}
+			pl = pl->next;
+		}
+	}
+
+	if (!ret_type || ret_type->kind == TY_VOID) {
+		fprintf(cg->out, "## Returns: NONE\n");
+	} else if (n->u.func.doc_return && n->u.func.doc_return[0]) {
+		fprintf(cg->out, "## Returns:\n");
+		fprintf(cg->out, "## < a0 - %s\n", n->u.func.doc_return);
+	} else {
+		fprintf(cg->out, "## Returns:\n");
+		fprintf(cg->out, "## < a0 - return value, is %s\n", ret_buf);
+	}
+
+	fprintf(cg->out, "## Additional Implementation Notes:\n");
+	if (n->u.func.doc_details && n->u.func.doc_details[0])
+		fprintf(cg->out, "## %s\n", n->u.func.doc_details);
+}
+
 static void cg_func(CodeGen *cg, AstNode *n) {
 	if (!n->u.func.name) return;
 
@@ -1477,6 +1569,7 @@ static void cg_func(CodeGen *cg, AstNode *n) {
 	}
 
 	fprintf(cg->out, "\n");
+	if (cg->gen_doc) cg_emit_doc(cg, n);
 	{
 		Symbol *fsym = symtab_lookup(cg->symtab, n->u.func.name);
 		const char *flbl = (fsym && fsym->func_label) ? fsym->func_label : n->u.func.name;

@@ -60,6 +60,8 @@ typedef struct {
 	} *asm_type_map;
 	int asm_type_count;
 	int asm_type_cap;
+
+	int      gen_doc;
 } CodeGen;
 
 void codegen_init(CodeGen *cg, FILE *out, SymTab *st);

@@ -51,6 +51,18 @@ void ast_free(AstNode *n) {
 	case AST_FUNC_DEF:
 	case AST_FUNC_DECL:
 		free(n->u.func.name);
+		free(n->u.func.doc_brief);
+		free(n->u.func.doc_details);
+		free(n->u.func.doc_return);
+		{
+			int i;
+			for (i = 0; i < n->u.func.doc_param_count; i++) {
+				free(n->u.func.doc_param_names[i]);
+				free(n->u.func.doc_param_descs[i]);
+			}
+		}
+		free(n->u.func.doc_param_names);
+		free(n->u.func.doc_param_descs);
 		ast_list_free(n->u.func.params);
 		ast_free(n->u.func.body);
 		break;

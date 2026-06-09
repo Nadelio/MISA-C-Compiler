@@ -2,6 +2,14 @@ _start:
 	cal main_
 	exit
 
+sbmk "dot_(a: u32t, b: u32t): i32t"
+##
+## Parameters:
+## > a0 - a, is u32t
+## > a1 - b, is u32t
+## Returns:
+## < a0 - return value, is i32t
+## Additional Implementation Notes:
 dot_:
 	sub sp, 8
 	mov ea, fp
@@ -35,6 +43,13 @@ dot_:
 	add sp, 8
 	ret
 
+sbmk "classify_(v: i32t): i32t"
+##
+## Parameters:
+## > a0 - v, is i32t
+## Returns:
+## < a0 - return value, is i32t
+## Additional Implementation Notes:
 classify_:
 	sub sp, 4
 	mov ea, fp
@@ -67,6 +82,12 @@ __L0:
 	add sp, 4
 	ret
 
+sbmk "main_(): i32t"
+##
+## Parameters: NONE
+## Returns:
+## < a0 - return value, is i32t
+## Additional Implementation Notes:
 main_:
 	sub sp, 16
 	mov t1, 3

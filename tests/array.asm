@@ -2,6 +2,14 @@ _start:
 	cal main_
 	exit
 
+sbmk "max_(a: i32t, b: i32t): i32t"
+##
+## Parameters:
+## > a0 - a, is i32t
+## > a1 - b, is i32t
+## Returns:
+## < a0 - return value, is i32t
+## Additional Implementation Notes:
 max_:
 	sub sp, 8
 	mov ea, fp
@@ -29,6 +37,14 @@ __L1:
 	add sp, 8
 	ret
 
+sbmk "sum_array_(arr: i32t*, n: i32t): i32t"
+##
+## Parameters:
+## > a0 - arr, is i32t*
+## > a1 - n, is i32t
+## Returns:
+## < a0 - return value, is i32t
+## Additional Implementation Notes:
 sum_array_:
 	sub sp, 16
 	mov ea, fp
@@ -82,6 +98,12 @@ __L4:
 	add sp, 16
 	ret
 
+sbmk "main_(): i32t"
+##
+## Parameters: NONE
+## Returns:
+## < a0 - return value, is i32t
+## Additional Implementation Notes:
 main_:
 	sub sp, 20
 	mov t0, 1
