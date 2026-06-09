@@ -42,6 +42,18 @@ misacc.exe <input.c> [-o output.misa] [--doc|-gd]
 ## Special C Syntax
 In order to support complete interop between MISA and C, some new syntax had to be introduced for various features, here are those features, and the C syntax to utilize them:
 
+- Doc comments
+```c
+/// @brief A short description of your function
+/// @param foo a parameter in your function
+/// @return The value returned by your function (if any)
+/// @details An additional implementation details you want to include
+void meep(int foo) {
+    // ...
+    return;
+}
+```
+
 - Using MISA structures
 ```c
 #include "player.asm"
