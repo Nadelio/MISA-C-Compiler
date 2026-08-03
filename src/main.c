@@ -23,7 +23,7 @@ static char *read_file(const char *path, int *out_len) {
 }
 
 static void usage(const char *prog) {
-	fprintf(stderr, "Usage: %s <input.c> [-o output.misa] [--doc|-gd]\n", prog);
+	fprintf(stderr, "Usage: %s <input.c> [-o output.asm] [--doc|-gd]\n", prog);
 }
 
 int main(int argc, char **argv) {
