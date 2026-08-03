@@ -22,5 +22,6 @@ int main() {
     p.y = 4;
     q.x = 1;
     q.y = 2;
-    return classify(dot(p, q));
+    println_int(classify(dot(p, q)));
+    return 0;
 }

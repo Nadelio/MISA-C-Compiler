@@ -8,7 +8,7 @@ Vector instructions operate on contiguous ranges of registers. They make it poss
 
 Vector instructions infer their working size from the first operand, which is always a register range, written using the range operator `..` as shown below:
 
-```misa
+```
 s0..s2
 ```
 
@@ -20,7 +20,7 @@ All remaining operands specify only their starting registers, but their behavior
 
 Full example using the Vector Float Add instruction:
 
-```misa
+```
 vfadd s0..s2, t4.., a2
 ```
 
@@ -31,47 +31,86 @@ In this case:
 
 ---
 
-**`vpsh` → Vector Push**
+**`vpsh` -> Vector Push**
 Pushes a range of registers onto the stack.
 Operands: `register_range`
-Pseudocode: `vector_push(register_range)`
+Pseudocode:
+```c
+vector_push(register_range);
+```
 
-**`vpop` → Vector Pop**
+**`vpop` -> Vector Pop**
 Pops a range of registers from the stack.
 Operands: `register_range`
-Pseudocode: `vector_pop(register_range)`
+Pseudocode:
+```c
+vector_pop(register_range);
+```
 
-**`vmov` → Vector Move**
+**`vmov` -> Vector Move**
 Copies a range of registers to another.
 Operands: `dest_range, source_start`
-Pseudocode: `vector_move(dest_range, source_start)`
+Pseudocode:
+```c
+vector_move(dest_range, source_start);
+```
 
-**`vfadd` → Vector Float Add [c]**
+**`vfadd` -> Vector Float Add [c]**
 Adds two ranges of float values.
 Operands: `[dest_range], a_start, b_start`
-Pseudocode: `vector_fadd(dest_range, a_start, b_start)`
-[c] Pseudocode: `vector_fadd(a_range, b_start)`
+Pseudocode:
+```c
+vector_fadd(dest_range, a_start, b_start);
+```
+[c] Pseudocode:
+```c
+vector_fadd(a_range, b_start);
+```
 
-**`vfsub` → Vector Float Sub [c]**
+**`vfsub` -> Vector Float Sub [c]**
 Subtracts two ranges of float values.
 Operands: `[dest_range], a_start, b_start`
-Pseudocode: `vector_fsub(dest_range, a_start, b_start)`
-[c] Pseudocode: `vector_fsub(a_range, b_start)`
+Pseudocode:
+```c
+vector_fsub(dest_range, a_start, b_start);
+```
+[c] Pseudocode:
+```c
+vector_fsub(a_range, b_start);
+```
 
-**`vfmul` → Vector Float Multiply [c]**
+**`vfmul` -> Vector Float Multiply [c]**
 Multiplies two ranges of float values.
 Operands: `[dest_range], a_start, b_start`
-Pseudocode: `vector_fmul(dest_range, a_start, b_start)`
-[c] Pseudocode: `vector_fmul(a_range, b_start)`
+Pseudocode:
+```c
+vector_fmul(dest_range, a_start, b_start);
+```
+[c] Pseudocode:
+```c
+vector_fmul(a_range, b_start);
+```
 
-**`vffma` → Vector Float Fused Multiply-Add [c]**
+**`vffma` -> Vector Float Fused Multiply-Add [c]**
 Performs a fused multiply-add operation with ranges of float values.
 Operands: `[dest_range], a_start, b_start, c_start`
-Pseudocode: `vector_ffma(dest_range, a_start, b_start, c_start)`
-[c] Pseudocode: `vector_ffma(a_range, b_start, c_start)`
+Pseudocode:
+```c
+vector_ffma(dest_range, a_start, b_start, c_start);
+```
+[c] Pseudocode:
+```c
+vector_ffma(a_range, b_start, c_start);
+```
 
-**`vfdiv` → Vector Float Divide [c]**
+**`vfdiv` -> Vector Float Divide [c]**
 Divides two ranges of float values.
 Operands: `[dest_range], a_start, b_start`
-Pseudocode: `vector_fdiv(dest_range, a_start, b_start)`
-[c] Pseudocode: `vector_fdiv(a_range, b_start)`
+Pseudocode:
+```c
+vector_fdiv(dest_range, a_start, b_start);
+```
+[c] Pseudocode:
+```c
+vector_fdiv(a_range, b_start);
+```

@@ -12,6 +12,8 @@ This mechanism allows you to perform large pieces of work without skipping frame
 
 ## The Watchdog
 
-Yielding is mandatory for long-running tasks. A process is not allowed to monopolize the CPU and starve others in the queue. To enforce this, the kernel has a routine known as **Watchdog**. The Watchdog is a safety mechanism that monitors how long a process runs without yielding or exiting. If a process exceeds a defined threshold, the Watchdog raises an exception, halting execution and printing an error to the terminal.
+Yielding is mandatory for long-running tasks. A process is not allowed to monopolize the CPU and starve others in the queue. To enforce this, the kernel has a routine known as **Watchdog**. The Watchdog is a safety mechanism that monitors how long a process runs without yielding or exiting. If a process exceeds a defined threshold[^1], the Watchdog raises an exception, halting execution and printing an error to the terminal.
 
 This behavior is analogous to a real-life operating system prompting you to terminate a program when it stops responding.
+
+[^1]: A process can run for 100,000 cycles before triggering a Watchdog violation. Note than an instruction may require multiple cycles to execute, so the threshold does not map directly to the number of instructions in the source code.

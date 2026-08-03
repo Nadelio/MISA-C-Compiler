@@ -1,5 +1,5 @@
-#include "tests/cell_width.asm"
-#include "tests/local_func.asm"
+#include "tests/c/cell_width.asm"
+#include "tests/c/local_func.asm"
 
 extern char CELL_WIDTH;
 extern struct Player player;

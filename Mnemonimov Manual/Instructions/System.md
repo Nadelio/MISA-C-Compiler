@@ -4,22 +4,31 @@ System instructions interface with the kernel. They can invoke syscalls, pause t
 
 ---
 
-**`syscall` → System Call**
-Invokes a system call identified by the syscall operand.
+**`syscall` -> System Call**
+Invokes a system call identified by the syscall operand. See [System Calls](../Platform%20Interface/System%20Calls.md).
 Operands: `Syscall`
-Pseudocode: `invoke_system_call(Syscall)`
+Pseudocode: 
+```c
+invoke_system_call(Syscall)
+```
 
-**`break` → Break**
+**`break` -> Break**
 Transfers control to the debugger.
 Operands: -
-Pseudocode: `debug_break()`
+Pseudocode: 
+```c
+debug_break()
+```
 
-**`yield` → Yield**
+**`yield` -> Yield**
 Suspends execution and puts the active process at the end of the process queue, returning control to the kernel. Used to share CPU time with other processes during long-running tasks.
 Operands: -
-Pseudocode: `yield_process()`
+Pseudocode: 
+```c
+yield_process()
+```
 
-**`exit` → Exit**
+**`exit` -> Exit**
 Stops execution and terminates the active process, returning control to the kernel. Required for built-in processes once their work is complete.
 Operands: -
 Pseudocode: `exit_process()`

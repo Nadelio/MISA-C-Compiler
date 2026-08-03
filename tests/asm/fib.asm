@@ -2,13 +2,6 @@ _start:
 	cal main_
 	exit
 
-sbmk "fib_(n: i32t): i32t"
-##
-## Parameters:
-## > a0 - n, is i32t
-## Returns:
-## < a0 - return value, is i32t
-## Additional Implementation Notes:
 fib_:
 	sub sp, 4
 	mov ea, fp
@@ -52,12 +45,6 @@ __L1:
 	add sp, 4
 	ret
 
-sbmk "main_(): i32t"
-##
-## Parameters: NONE
-## Returns:
-## < a0 - return value, is i32t
-## Additional Implementation Notes:
 main_:
 	sub sp, 8
 	mov t1, 0
@@ -73,8 +60,8 @@ __L2:
 	mov t2, 8
 	cmp lt, t1, t2
 	sel t0, 1, 0
-	cmp eq, t0, zr
-	jtr __L4
+	cmp neq, t0, zr
+	jfs __L4
 	psh t0
 	mov ea, fp
 	lde i32t, t0, -4
@@ -90,6 +77,11 @@ __L2:
 	add t1, t2, t3
 	str i32t, g__g_count, t1
 	mov t0, t1
+	mov ea, fp
+	lde i32t, t1, -8
+	mov a0, t1
+	syscall SYS_PRINT_LINE_INT
+	mov t0, a0
 __L3:
 	mov ea, fp
 	lde i32t, t2, -4
@@ -100,8 +92,7 @@ __L3:
 	mov t0, t1
 	jmp __L2
 __L4:
-	mov ea, fp
-	lde i32t, t0, -8
+	mov t0, 0
 	mov a0, t0
 	add sp, 8
 	ret

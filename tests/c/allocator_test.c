@@ -1,4 +1,4 @@
-#include "../MISA Libraries/allocator.asm"
+#include "../../MISA Libraries/allocator.asm"
 
 extern void* malloc(int);
 extern void  free(void*);

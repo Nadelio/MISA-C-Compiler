@@ -2,12 +2,6 @@ _start:
 	cal main_
 	exit
 
-sbmk "foo_(): void"
-## This prints "foo" to the console
-## Parameters: NONE
-## Returns: NONE
-## Additional Implementation Notes:
-## This also increments the global variable X
 foo_:
 	tpa t1, __str_0
 	mov a0, t1
@@ -20,14 +14,6 @@ foo_:
 	str i32t, g__x, t1
 	ret
 
-sbmk "beep_(a: i32t): i32t"
-## prints the given number `a`
-## Parameters:
-## > a0 - some number
-## Returns:
-## < a0 - The sum of the global variable `x` and `a`
-## Additional Implementation Notes:
-## This function also increments the global variable x
 beep_:
 	sub sp, 4
 	mov ea, fp
@@ -49,13 +35,6 @@ beep_:
 	add sp, 4
 	ret
 
-sbmk "multiple_params_(a: i32t, message: i8t*): void"
-## prints `a` first, then `message`
-## Parameters:
-## > a0 - a, is i32t
-## > a1 - message, is i8t*
-## Returns: NONE
-## Additional Implementation Notes:
 multiple_params_:
 	sub sp, 8
 	mov ea, fp

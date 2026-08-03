@@ -2,12 +2,6 @@ _start:
 	cal main_
 	exit
 
-sbmk "main_(): i32t"
-##
-## Parameters: NONE
-## Returns:
-## < a0 - return value, is i32t
-## Additional Implementation Notes:
 main_:
 	sub sp, 4
 	mov t2, 4
