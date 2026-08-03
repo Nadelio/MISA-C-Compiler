@@ -313,44 +313,361 @@ static Token lex_number(Lexer *l, int start_line, int start_col) {
 	return t;
 }
 
+static struct MacroDef *lookup_macro_def(Lexer *l, const char *name) {
+	int i;
+	for (i = 0; i < l->macro_count; i++)
+		if (!strcmp(l->macros[i].name, name)) return &l->macros[i];
+	return NULL;
+}
+
+static const char *lookup_macro(Lexer *l, const char *name) {
+	struct MacroDef *m = lookup_macro_def(l, name);
+	return m ? m->body : NULL;
+}
+
+static void push_expansion(Lexer *l, char *heap_body, int *expanding_flag) {
+	IncludeFrame *fr;
+	if (l->include_depth >= l->include_cap) {
+		l->include_cap = l->include_cap ? l->include_cap * 2 : 8;
+		l->include_stack = (IncludeFrame *)realloc(l->include_stack,
+		    l->include_cap * sizeof(IncludeFrame));
+	}
+	fr = &l->include_stack[l->include_depth++];
+	fr->src                  = l->src;
+	fr->owned_buf            = l->owned_buf;
+	fr->pos                  = l->pos;
+	fr->len                  = l->len;
+	fr->line                 = l->line;
+	fr->col                  = l->col;
+	fr->filename             = l->filename;
+	fr->filename_owned       = l->filename_owned;
+	fr->macro_expanding_flag = expanding_flag;
+	l->src            = heap_body;
+	l->owned_buf      = heap_body;
+	l->pos            = 0;
+	l->len            = (int)strlen(heap_body);
+	l->filename_owned = 0;
+}
+
+static char *substitute_params(const char *body, char **params, char **args, int nparams) {
+	int   cap = 1024, ri = 0, bi = 0;
+	int   blen = (int)strlen(body);
+	char *out  = (char *)malloc(cap);
+#define GROW(n) do { if (ri + (n) >= cap) { cap = cap * 2 + (n); out = (char *)realloc(out, cap); } } while (0)
+	while (bi < blen) {
+		char c = body[bi];
+		if (c == '#' && bi + 1 < blen && body[bi + 1] == '#') {
+			while (ri > 0 && (out[ri-1] == ' ' || out[ri-1] == '\t')) ri--;
+			bi += 2;
+			while (bi < blen && (body[bi] == ' ' || body[bi] == '\t')) bi++;
+		} else if (c == '#') {
+			int saved = bi++;
+			while (bi < blen && (body[bi] == ' ' || body[bi] == '\t')) bi++;
+			if (bi < blen && (isalpha((unsigned char)body[bi]) || body[bi] == '_')) {
+				char pn[64]; int pi = 0, k, found = 0;
+				while (bi < blen && (isalnum((unsigned char)body[bi]) || body[bi] == '_') && pi < 63)
+					pn[pi++] = body[bi++];
+				pn[pi] = '\0';
+				for (k = 0; k < nparams && !found; k++) {
+					if (!strcmp(pn, params[k])) {
+						const char *a = args[k]; int alen, j;
+						while (*a == ' ' || *a == '\t') a++;
+						alen = (int)strlen(a);
+						while (alen > 0 && (a[alen-1] == ' ' || a[alen-1] == '\t')) alen--;
+						GROW(alen * 2 + 3);
+						out[ri++] = '"';
+						for (j = 0; j < alen; j++) {
+							if (a[j] == '"' || a[j] == '\\') out[ri++] = '\\';
+							out[ri++] = a[j];
+						}
+						out[ri++] = '"';
+						found = 1;
+					}
+				}
+				if (!found) { int len = bi - saved; GROW(len); memcpy(out + ri, body + saved, len); ri += len; }
+			} else { GROW(1); out[ri++] = '#'; }
+		} else if (isalpha((unsigned char)c) || c == '_') {
+			char word[64]; int wi = 0, k, found = 0;
+			while (bi < blen && (isalnum((unsigned char)body[bi]) || body[bi] == '_') && wi < 63)
+				word[wi++] = body[bi++];
+			word[wi] = '\0';
+			for (k = 0; k < nparams && !found; k++) {
+				if (!strcmp(word, params[k])) {
+					int alen = (int)strlen(args[k]);
+					GROW(alen); memcpy(out + ri, args[k], alen); ri += alen; found = 1;
+				}
+			}
+			if (!found) { GROW(wi); memcpy(out + ri, word, wi); ri += wi; }
+		} else { GROW(1); out[ri++] = body[bi++]; }
+	}
+#undef GROW
+	out[ri] = '\0';
+	return out;
+}
+
+static int collect_macro_args(Lexer *l, char **args, int max_args) {
+	int  nargs = 0, paren = 0, bi = 0;
+	char buf[1024];
+	while (l->pos < l->len) {
+		char c = l->src[l->pos];
+		if (c == '(' || c == '[' || c == '{') {
+			paren++;
+			if (bi < 1023) buf[bi++] = c;
+			advance_ch(l);
+		} else if ((c == ')' || c == ']' || c == '}') && paren > 0) {
+			paren--;
+			if (bi < 1023) buf[bi++] = c;
+			advance_ch(l);
+		} else if (c == ')') {
+			advance_ch(l);
+			buf[bi] = '\0';
+			if (nargs > 0 || bi > 0) {
+				char *s = buf; int e;
+				while (*s == ' ' || *s == '\t') s++;
+				e = (int)strlen(s);
+				while (e > 0 && (s[e-1] == ' ' || s[e-1] == '\t')) e--;
+				s[e] = '\0';
+				if (nargs < max_args) args[nargs++] = strdup(s);
+			}
+			break;
+		} else if (c == ',' && paren == 0) {
+			advance_ch(l);
+			buf[bi] = '\0';
+			{ char *s = buf; int e;
+				while (*s == ' ' || *s == '\t') s++;
+				e = (int)strlen(s);
+				while (e > 0 && (s[e-1] == ' ' || s[e-1] == '\t')) e--;
+				s[e] = '\0';
+				if (nargs < max_args) args[nargs++] = strdup(s);
+			}
+			bi = 0;
+		} else {
+			if (bi < 1023) buf[bi++] = c;
+			advance_ch(l);
+		}
+	}
+	return nargs;
+}
+
+typedef struct { const char *s; int pos; Lexer *lx; } PPExpr;
+static long long pp_ternary(PPExpr *e);
+static void pp_skip(PPExpr *e) { while (e->s[e->pos]==' '||e->s[e->pos]=='\t') e->pos++; }
+static long long pp_primary(PPExpr *e) {
+	char c; pp_skip(e); c = e->s[e->pos];
+	if (c=='(') { e->pos++; long long v=pp_ternary(e); pp_skip(e); if(e->s[e->pos]==')')e->pos++; return v; }
+	if (c=='!') { e->pos++; return !pp_primary(e); }
+	if (c=='~') { e->pos++; return ~pp_primary(e); }
+	if (c=='-') { e->pos++; return -pp_primary(e); }
+	if (c=='+') { e->pos++; return  pp_primary(e); }
+	if (isdigit((unsigned char)c)) {
+		char *end; long long v = (long long)strtoull(e->s+e->pos, &end, 0);
+		e->pos = (int)(end - e->s);
+		while (isalpha((unsigned char)e->s[e->pos])) e->pos++;
+		return v;
+	}
+	if (isalpha((unsigned char)c) || c=='_') {
+		char nm[64]; int ni = 0;
+		while ((isalnum((unsigned char)e->s[e->pos])||e->s[e->pos]=='_') && ni<63) nm[ni++]=e->s[e->pos++];
+		nm[ni] = '\0';
+		if (!strcmp(nm, "defined")) {
+			int hp; char mn[64]; int mi = 0;
+			pp_skip(e); hp = (e->s[e->pos]=='('); if (hp) e->pos++;
+			pp_skip(e);
+			while ((isalnum((unsigned char)e->s[e->pos])||e->s[e->pos]=='_') && mi<63) mn[mi++]=e->s[e->pos++];
+			mn[mi] = '\0'; pp_skip(e); if (hp && e->s[e->pos]==')') e->pos++;
+			return lookup_macro(e->lx, mn) ? 1 : 0;
+		}
+		{ const char *body = lookup_macro(e->lx, nm);
+			if (body) { PPExpr sub; sub.s=body; sub.pos=0; sub.lx=e->lx; return pp_ternary(&sub); } }
+		return 0;
+	}
+	return 0;
+}
+static long long pp_mul(PPExpr *e) {
+	long long v = pp_primary(e);
+	for (;;) { char c; pp_skip(e); c = e->s[e->pos];
+		if (c=='*') { e->pos++; v *= pp_primary(e); }
+		else if (c=='/') { long long r; e->pos++; r=pp_primary(e); v=r?v/r:0; }
+		else if (c=='%') { long long r; e->pos++; r=pp_primary(e); v=r?v%r:0; }
+		else break; }
+	return v;
+}
+static long long pp_add(PPExpr *e) {
+	long long v = pp_mul(e);
+	for (;;) { char c; pp_skip(e); c = e->s[e->pos];
+		if (c=='+') { e->pos++; v += pp_mul(e); }
+		else if (c=='-') { e->pos++; v -= pp_mul(e); }
+		else break; }
+	return v;
+}
+static long long pp_shift(PPExpr *e) {
+	long long v = pp_add(e);
+	for (;;) { pp_skip(e);
+		if (e->s[e->pos]=='<'&&e->s[e->pos+1]=='<') { e->pos+=2; v<<=pp_add(e); }
+		else if (e->s[e->pos]=='>'&&e->s[e->pos+1]=='>') { e->pos+=2; v>>=pp_add(e); }
+		else break; }
+	return v;
+}
+static long long pp_rel(PPExpr *e) {
+	long long v = pp_shift(e);
+	for (;;) { pp_skip(e);
+		if (e->s[e->pos]=='<'&&e->s[e->pos+1]=='=') { e->pos+=2; v=v<=pp_shift(e); }
+		else if (e->s[e->pos]=='>'&&e->s[e->pos+1]=='=') { e->pos+=2; v=v>=pp_shift(e); }
+		else if (e->s[e->pos]=='<'&&e->s[e->pos+1]!='<') { e->pos++;  v=v<pp_shift(e); }
+		else if (e->s[e->pos]=='>'&&e->s[e->pos+1]!='>') { e->pos++;  v=v>pp_shift(e); }
+		else break; }
+	return v;
+}
+static long long pp_eq(PPExpr *e) {
+	long long v = pp_rel(e);
+	for (;;) { pp_skip(e);
+		if (e->s[e->pos]=='='&&e->s[e->pos+1]=='=') { e->pos+=2; v=v==pp_rel(e); }
+		else if (e->s[e->pos]=='!'&&e->s[e->pos+1]=='=') { e->pos+=2; v=v!=pp_rel(e); }
+		else break; }
+	return v;
+}
+static long long pp_band(PPExpr *e) {
+	long long v = pp_eq(e);
+	for (;;) { pp_skip(e);
+		if (e->s[e->pos]=='&'&&e->s[e->pos+1]!='&') { e->pos++; v&=pp_eq(e); }
+		else break; }
+	return v;
+}
+static long long pp_xor(PPExpr *e) {
+	long long v = pp_band(e);
+	for (;;) { pp_skip(e); if (e->s[e->pos]=='^') { e->pos++; v^=pp_band(e); } else break; }
+	return v;
+}
+static long long pp_bor(PPExpr *e) {
+	long long v = pp_xor(e);
+	for (;;) { pp_skip(e);
+		if (e->s[e->pos]=='|'&&e->s[e->pos+1]!='|') { e->pos++; v|=pp_xor(e); }
+		else break; }
+	return v;
+}
+static long long pp_and(PPExpr *e) {
+	long long v = pp_bor(e);
+	for (;;) { pp_skip(e);
+		if (e->s[e->pos]=='&'&&e->s[e->pos+1]=='&') { e->pos+=2; v=v&&pp_bor(e); }
+		else break; }
+	return v;
+}
+static long long pp_or(PPExpr *e) {
+	long long v = pp_and(e);
+	for (;;) { pp_skip(e);
+		if (e->s[e->pos]=='|'&&e->s[e->pos+1]=='|') { e->pos+=2; v=v||pp_and(e); }
+		else break; }
+	return v;
+}
+static long long pp_ternary(PPExpr *e) {
+	long long v = pp_or(e), t, f; pp_skip(e);
+	if (e->s[e->pos]=='?') {
+		e->pos++; t=pp_ternary(e); pp_skip(e);
+		if (e->s[e->pos]==':') e->pos++;
+		f=pp_ternary(e); return v?t:f;
+	}
+	return v;
+}
+static long long eval_pp_expr(Lexer *l, const char *expr) {
+	PPExpr e; e.s=expr; e.pos=0; e.lx=l; return pp_ternary(&e);
+}
+
+static int skip_cond_block(Lexer *l, int stop_at_else) {
+	int depth = 1;
+	while (l->pos < l->len) {
+		if (l->col != 1 || l->src[l->pos] != '#') { advance_ch(l); continue; }
+		advance_ch(l);
+		while (l->pos < l->len && (l->src[l->pos]==' '||l->src[l->pos]=='\t')) advance_ch(l);
+		{ char dn[16]; int di = 0;
+			while (l->pos < l->len && isalpha((unsigned char)l->src[l->pos]) && di < 15)
+				dn[di++] = advance_ch(l);
+			dn[di] = '\0';
+			if (!strcmp(dn,"if")||!strcmp(dn,"ifdef")||!strcmp(dn,"ifndef")) {
+				depth++;
+			} else if (!strcmp(dn,"endif")) {
+				depth--;
+				while (l->pos < l->len && l->src[l->pos]!='\n') advance_ch(l);
+				if (depth == 0) return 2;
+				continue;
+			} else if (depth==1 && stop_at_else && !strcmp(dn,"else")) {
+				while (l->pos < l->len && l->src[l->pos]!='\n') advance_ch(l);
+				return 1;
+			} else if (depth==1 && stop_at_else && !strcmp(dn,"elif")) {
+				char expr[256]; int ei = 0;
+				while (l->pos < l->len && (l->src[l->pos]==' '||l->src[l->pos]=='\t')) advance_ch(l);
+				while (l->pos < l->len && l->src[l->pos]!='\n' && ei < 255) expr[ei++] = advance_ch(l);
+				expr[ei] = '\0';
+				if (eval_pp_expr(l, expr)) return 1;
+				continue;
+			}
+		}
+		while (l->pos < l->len && l->src[l->pos]!='\n') advance_ch(l);
+	}
+	return 2;
+}
+
 static void handle_directive(Lexer *l) {
 	char name[64];
 	int  ni = 0;
 
-	
 	while (l->pos < l->len && l->src[l->pos] == ' ') l->pos++;
-
-	
 	while (l->pos < l->len && isalpha((unsigned char)l->src[l->pos]) && ni < 63)
 		name[ni++] = l->src[l->pos++];
 	name[ni] = '\0';
 
 	if (!strcmp(name, "define")) {
-		
-		while (l->pos < l->len && l->src[l->pos] == ' ') l->pos++;
-		
 		char mname[64]; int mi = 0;
+		int is_func = 0;
+		char *fparams[64];
+		int nfp = 0;
+		char body[1024]; int bi = 0;
+		int k;
+		while (l->pos < l->len && l->src[l->pos] == ' ') l->pos++;
 		while (l->pos < l->len && is_ident_body(l->src[l->pos]) && mi < 63)
 			mname[mi++] = l->src[l->pos++];
 		mname[mi] = '\0';
-		
+		if (l->pos < l->len && l->src[l->pos] == '(') {
+			is_func = 1; l->pos++;
+			while (l->pos < l->len && l->src[l->pos] != ')' && l->src[l->pos] != '\n') {
+				char pn[64]; int pi = 0;
+				while (l->pos < l->len && l->src[l->pos] == ' ') l->pos++;
+				if (l->pos < l->len && l->src[l->pos] == ')') break;
+				if (l->pos+2 < l->len && l->src[l->pos]=='.'&&l->src[l->pos+1]=='.'&&l->src[l->pos+2]=='.') {
+					if (nfp < 64) fparams[nfp++] = strdup("..."); l->pos += 3; break;
+				}
+				while (l->pos < l->len && is_ident_body(l->src[l->pos]) && pi < 63)
+					pn[pi++] = l->src[l->pos++];
+				pn[pi] = '\0';
+				if (pi > 0 && nfp < 64) fparams[nfp++] = strdup(pn);
+				while (l->pos < l->len && l->src[l->pos] == ' ') l->pos++;
+				if (l->pos < l->len && l->src[l->pos] == ',') l->pos++;
+			}
+			if (l->pos < l->len && l->src[l->pos] == ')') l->pos++;
+		}
 		while (l->pos < l->len && l->src[l->pos] == ' ') l->pos++;
-		
-		char body[256]; int bi = 0;
-		while (l->pos < l->len && l->src[l->pos] != '\n' && bi < 255)
+		while (l->pos < l->len && l->src[l->pos] != '\n' && bi < 1023)
 			body[bi++] = l->src[l->pos++];
 		body[bi] = '\0';
-		
 		while (bi > 0 && body[bi-1] == ' ') body[--bi] = '\0';
-
 		if (l->macro_count >= l->macro_cap) {
 			l->macro_cap = l->macro_cap ? l->macro_cap * 2 : MACRO_INIT_CAP;
 			l->macros = (struct MacroDef *)realloc(l->macros,
 			    l->macro_cap * sizeof(*l->macros));
 		}
-		l->macros[l->macro_count].name = strdup(mname);
-		l->macros[l->macro_count].body = strdup(body);
-		l->macro_count++;
+		{ struct MacroDef *m = &l->macros[l->macro_count++];
+			m->name             = strdup(mname);
+			m->body             = strdup(body);
+			m->is_function_like = is_func;
+			m->param_count      = nfp;
+			m->expanding        = 0;
+			if (is_func && nfp > 0) {
+				m->params = (char **)malloc(nfp * sizeof(char *));
+				for (k = 0; k < nfp; k++) m->params[k] = fparams[k];
+			} else {
+				m->params = NULL;
+				for (k = 0; k < nfp; k++) free(fparams[k]);
+			}
+		}
 	} else if (!strcmp(name, "include")) {
 		
 		while (l->pos < l->len && l->src[l->pos] == ' ') l->pos++;
@@ -459,7 +776,8 @@ static void handle_directive(Lexer *l) {
 						fr->line           = l->line;
 						fr->col            = l->col;
 						fr->filename       = l->filename;
-						fr->filename_owned = l->filename_owned;
+						fr->filename_owned       = l->filename_owned;
+						fr->macro_expanding_flag = NULL;
 						
 						l->src            = fbuf;
 						l->owned_buf      = fbuf;
@@ -474,17 +792,88 @@ static void handle_directive(Lexer *l) {
 				}
 			}
 		}
+	} else if (!strcmp(name, "undef")) {
+		char mname[64]; int mi = 0, k;
+		while (l->pos < l->len && l->src[l->pos] == ' ') l->pos++;
+		while (l->pos < l->len && is_ident_body(l->src[l->pos]) && mi < 63)
+			mname[mi++] = l->src[l->pos++];
+		mname[mi] = '\0';
+		for (k = 0; k < l->macro_count; k++) {
+			if (!strcmp(l->macros[k].name, mname)) {
+				int j;
+				free(l->macros[k].name); free(l->macros[k].body);
+				for (j = 0; j < l->macros[k].param_count; j++) free(l->macros[k].params[j]);
+				free(l->macros[k].params);
+				l->macros[k] = l->macros[--l->macro_count];
+				break;
+			}
+		}
+	} else if (!strcmp(name, "ifdef") || !strcmp(name, "ifndef")) {
+		int want_defined = !strcmp(name, "ifdef");
+		char mname[64]; int mi = 0;
+		while (l->pos < l->len && l->src[l->pos] == ' ') l->pos++;
+		while (l->pos < l->len && is_ident_body(l->src[l->pos]) && mi < 63)
+			mname[mi++] = l->src[l->pos++];
+		mname[mi] = '\0';
+		while (l->pos < l->len && l->src[l->pos] != '\n') l->pos++;
+		{ int defined = (lookup_macro(l, mname) != NULL);
+			int taken   = (defined == want_defined);
+			if (l->cond_depth < 63) l->cond_depth++;
+			if (taken) {
+				l->cond_stack[l->cond_depth] = 1;
+				l->cond_done[l->cond_depth]  = 1;
+			} else {
+				int r = skip_cond_block(l, 1);
+				if (r == 1) {
+					l->cond_stack[l->cond_depth] = 1;
+					l->cond_done[l->cond_depth]  = 1;
+				} else {
+					if (l->cond_depth > 0) l->cond_depth--;
+				}
+			}
+		}
+		return;
+	} else if (!strcmp(name, "if")) {
+		char expr[256]; int ei = 0;
+		while (l->pos < l->len && l->src[l->pos] == ' ') l->pos++;
+		while (l->pos < l->len && l->src[l->pos] != '\n' && ei < 255)
+			expr[ei++] = l->src[l->pos++];
+		expr[ei] = '\0';
+		{ long long val = eval_pp_expr(l, expr);
+			if (l->cond_depth < 63) l->cond_depth++;
+			if (val) {
+				l->cond_stack[l->cond_depth] = 1;
+				l->cond_done[l->cond_depth]  = 1;
+			} else {
+				int r = skip_cond_block(l, 1);
+				if (r == 1) {
+					l->cond_stack[l->cond_depth] = 1;
+					l->cond_done[l->cond_depth]  = 1;
+				} else {
+					if (l->cond_depth > 0) l->cond_depth--;
+				}
+			}
+		}
+		return;
+	} else if (!strcmp(name, "elif")) {
+		while (l->pos < l->len && l->src[l->pos] != '\n') l->pos++;
+		if (l->cond_depth > 0 && l->cond_stack[l->cond_depth]) {
+			skip_cond_block(l, 0);
+			l->cond_depth--;
+		}
+		return;
+	} else if (!strcmp(name, "else")) {
+		while (l->pos < l->len && l->src[l->pos] != '\n') l->pos++;
+		if (l->cond_depth > 0 && l->cond_stack[l->cond_depth]) {
+			skip_cond_block(l, 0);
+			l->cond_depth--;
+		}
+		return;
+	} else if (!strcmp(name, "endif")) {
+		if (l->cond_depth > 0) l->cond_depth--;
 	}
-	
-	while (l->pos < l->len && l->src[l->pos] != '\n') l->pos++;
-}
 
-static const char *lookup_macro(Lexer *l, const char *name) {
-	int i;
-	for (i = 0; i < l->macro_count; i++) {
-		if (!strcmp(l->macros[i].name, name)) return l->macros[i].body;
-	}
-	return NULL;
+	while (l->pos < l->len && l->src[l->pos] != '\n') l->pos++;
 }
 
 void lexer_init(Lexer *l, const char *src, int len, const char *filename) {
@@ -499,8 +888,11 @@ void lexer_init(Lexer *l, const char *src, int len, const char *filename) {
 void lexer_free(Lexer *l) {
 	int i;
 	for (i = 0; i < l->macro_count; i++) {
+		int j;
 		free(l->macros[i].name);
 		free(l->macros[i].body);
+		for (j = 0; j < l->macros[i].param_count; j++) free(l->macros[i].params[j]);
+		free(l->macros[i].params);
 	}
 	free(l->macros);
 	for (i = 0; i < l->asm_include_count; i++) free(l->asm_includes[i]);
@@ -544,6 +936,7 @@ static Token lex_one(Lexer *l) {
 			free(l->owned_buf);
 			if (l->filename_owned) free((char *)l->filename);
 			IncludeFrame *fr = &l->include_stack[--l->include_depth];
+			if (fr->macro_expanding_flag) *fr->macro_expanding_flag = 0;
 			l->src            = fr->src;
 			l->owned_buf      = fr->owned_buf;
 			l->pos            = fr->pos;
@@ -588,17 +981,34 @@ static Token lex_one(Lexer *l) {
 		Token t = make_token(kw, buf, sl, sc);
 		
 		if (kw == TOK_IDENT) {
-			const char *body = lookup_macro(l, buf);
-			if (body) {
-				
-				Lexer tmp;
-				lexer_init(&tmp, body, (int)strlen(body), l->filename);
-				Token expanded = lex_one(&tmp);
-				expanded.line = sl;
-				expanded.col  = sc;
-				lexer_free(&tmp);
-				free(t.text);
-				return expanded;
+			struct MacroDef *mdef = lookup_macro_def(l, buf);
+			if (mdef && !mdef->expanding) {
+				if (mdef->is_function_like) {
+					int sp = l->pos, sl2 = l->line, sc2 = l->col;
+					while (l->pos < l->len &&
+					    (l->src[l->pos]==' '||l->src[l->pos]=='\t'||l->src[l->pos]=='\n'))
+						advance_ch(l);
+					if (l->pos < l->len && l->src[l->pos] == '(') {
+						char *eargs[64]; int neargs, use, k;
+						char *ebuf;
+						advance_ch(l);
+						neargs = collect_macro_args(l, eargs, 64);
+						use  = neargs < mdef->param_count ? neargs : mdef->param_count;
+						ebuf = substitute_params(mdef->body, mdef->params, eargs, use);
+						for (k = 0; k < neargs; k++) free(eargs[k]);
+						mdef->expanding = 1;
+						push_expansion(l, ebuf, &mdef->expanding);
+						free(t.text);
+						return lex_one(l);
+					} else {
+						l->pos = sp; l->line = sl2; l->col = sc2;
+					}
+				} else {
+					mdef->expanding = 1;
+					push_expansion(l, strdup(mdef->body), &mdef->expanding);
+					free(t.text);
+					return lex_one(l);
+				}
 			}
 		}
 		return t;

@@ -33,11 +33,11 @@ clang -Iinclude -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE src/token.
 
 ## Usage
 ```
-misacc.exe <input.c> [-o output.misa] [--doc|-gd]
+misacc.exe <input.c> [-o output.asm] [--doc|-gd]
 ```
 
 - `<input.c>` — C89 source file to compile (required)
-- `-o output.misa` — write output to a file instead of stdout
+- `-o output.asm` — write output to a file instead of stdout
 - `--doc`/`-gd` - generate doc comments in the output (See: [Doc Comment Format](Mnemonimov%20Manual/Doc%20Comment%20Format.md))
 
 ## Special C Syntax

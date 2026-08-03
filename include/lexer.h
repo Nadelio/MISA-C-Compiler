@@ -15,6 +15,7 @@ typedef struct {
 	int         col;
 	const char *filename;
 	int         filename_owned;
+	int        *macro_expanding_flag; /* points to MacroDef.expanding; NULL for file includes */
 } IncludeFrame;
 
 /*
@@ -43,10 +44,14 @@ typedef struct {
 	int         seen_count;
 	int         seen_cap;
 
-	/* Simple #define macro table (object-like, integer/float only) */
+	/* #define macro table (object-like and function-like) */
 	struct MacroDef {
-		char *name;
-		char *body;
+		char  *name;
+		char  *body;
+		char **params;
+		int    param_count;
+		int    is_function_like;
+		int    expanding;
 	}          *macros;
 	int         macro_count;
 	int         macro_cap;
@@ -68,6 +73,11 @@ typedef struct {
 	int         pending_doc_param_count;
 	int         pending_doc_param_cap;
 	char       *pending_doc_return;      /* @return */
+
+	/* Conditional compilation stack (#if/#ifdef/#ifndef/#else/#endif) */
+	int  cond_depth;
+	int  cond_stack[64];
+	int  cond_done[64];
 
 	/* Error flag */
 	int         had_error;
