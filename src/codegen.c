@@ -28,6 +28,8 @@ static const BuiltinInfo builtin_table[] = {
 	{ BUILTIN_PRESERVE_BACK_BUFFER,    "SYS_PRESERVE_BACK_BUFFER",    0 },
 	{ BUILTIN_PRESERVE_FRONT_BUFFER,   "SYS_PRESERVE_FRONT_BUFFER",   0 },
 	{ BUILTIN_GET_INPUT,               "SYS_GET_INPUT",               0 },
+	{ BUILTIN_GET_MOUSE_X,             "SYS_GET_MOUSE_POSITION",      0 },
+	{ BUILTIN_GET_MOUSE_BUTTON_INPUT,  "SYS_GET_MOUSE_BUTTON_INPUT",  0 },
 	{ BUILTIN_GET_TERMINAL_INPUT_SIZE, "SYS_GET_TERMINAL_INPUT_SIZE", 0 },
 	{ BUILTIN_READ_TERMINAL_INPUT,     "SYS_READ_TERMINAL_INPUT",     1 },
 	{ BUILTIN_GET_UNIX_TIME,           "SYS_GET_UNIX_TIME",           0 },
@@ -71,6 +73,8 @@ static const SyscallNameEntry syscall_name_table[] = {
 	{ 21, "SYS_GET_DRAW_DELTA"            },
 	{ 22, "SYS_SET_RNG_SEED"              },
 	{ 23, "SYS_ALLOW_UNSAFE_JUMP"         },
+	{ 24, "SYS_GET_MOUSE_POSITION"        },
+	{ 25, "SYS_GET_MOUSE_BUTTON_INPUT"    },
 	{ -1, NULL }
 };
 
@@ -1002,6 +1006,7 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 	case AST_CALL: {
 		
 		int saved[15]; int nsaved = 0;
+		int skip_a0_copy = 0;
 		int i;
 		for (i = 0; i < 15; i++) {
 			if (cg->temp_used[i] && i != r) {
@@ -1064,6 +1069,10 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 				emit(cg, "exit");
 			} else if (sym && sym->builtin_id == BUILTIN_BREAK) {
 				emit(cg, "break");
+			} else if (sym && sym->builtin_id == BUILTIN_GET_MOUSE_Y) {
+				emit(cg, "syscall SYS_GET_MOUSE_POSITION");
+				emit(cg, "mov %s, a1", rn);
+				skip_a0_copy = 1;
 			} else if (sym && sym->builtin_id != BUILTIN_NONE) {
 				const BuiltinInfo *bi = builtin_lookup(sym->builtin_id);
 				if (bi) {
@@ -1094,7 +1103,8 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 		}
 
 		
-		emit(cg, "mov %s, a0", rn);
+		if (!skip_a0_copy)
+			emit(cg, "mov %s, a0", rn);
 
 		
 		for (i = nsaved - 1; i >= 0; i--) {

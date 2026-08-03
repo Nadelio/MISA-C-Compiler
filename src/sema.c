@@ -522,6 +522,9 @@ void sema_init(Sema *s, SymTab *st) {
 	reg_builtin(s, "preserve_back_buffer",  BUILTIN_PRESERVE_BACK_BUFFER,  type_make_void(), 0);
 	reg_builtin(s, "preserve_front_buffer", BUILTIN_PRESERVE_FRONT_BUFFER, type_make_void(), 0);
 	reg_builtin(s, "get_input",               BUILTIN_GET_INPUT,               type_make_int(0),  0);
+	reg_builtin(s, "get_mouse_x",             BUILTIN_GET_MOUSE_X,             type_make_int(0),  0);
+	reg_builtin(s, "get_mouse_y",             BUILTIN_GET_MOUSE_Y,             type_make_int(0),  0);
+	reg_builtin(s, "get_mouse_button_input",  BUILTIN_GET_MOUSE_BUTTON_INPUT,  type_make_int(0),  0);
 	reg_builtin(s, "get_terminal_input_size", BUILTIN_GET_TERMINAL_INPUT_SIZE, type_make_int(0),  0);
 	reg_builtin(s, "read_terminal_input",     BUILTIN_READ_TERMINAL_INPUT,     type_make_int(0),  2,
 	    type_make_pointer(type_make_char(0)), type_make_int(0));
@@ -546,6 +549,8 @@ void sema_init(Sema *s, SymTab *st) {
 			{ "SYS_PRESERVE_BACK_BUFFER",     9  },
 			{ "SYS_PRESERVE_FRONT_BUFFER",    10 },
 			{ "SYS_GET_INPUT",                11 },
+			{ "SYS_GET_MOUSE_POSITION",       24 },
+			{ "SYS_GET_MOUSE_BUTTON_INPUT",   25 },
 			{ "SYS_GET_TERMINAL_INPUT_SIZE",  12 },
 			{ "SYS_READ_TERMINAL_INPUT",      13 },
 			{ "SYS_STORAGE_READ",             14 },
@@ -565,6 +570,23 @@ void sema_init(Sema *s, SymTab *st) {
 			Symbol *sym = symtab_define(s->symtab, sysc[i].name,
 			    SYM_ENUM_CONST, type_make_int(0));
 			sym->enum_value = sysc[i].val;
+		}
+	}
+
+	{
+		static const struct { const char *name; int val; } mbtn[] = {
+			{ "MOUSE_BTN_LEFT",       1  },
+			{ "MOUSE_BTN_RIGHT",      2  },
+			{ "MOUSE_BTN_MIDDLE",     4  },
+			{ "MOUSE_BTN_WHEEL_UP",   8  },
+			{ "MOUSE_BTN_WHEEL_DOWN", 16 },
+			{ NULL, 0 }
+		};
+		int i;
+		for (i = 0; mbtn[i].name; i++) {
+			Symbol *sym = symtab_define(s->symtab, mbtn[i].name,
+			    SYM_ENUM_CONST, type_make_int(0));
+			sym->enum_value = mbtn[i].val;
 		}
 	}
 

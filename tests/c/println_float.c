@@ -1,3 +1,5 @@
+#include "misa.h"
+
 int main(void) {
     println_float(3.14159, 2);
     println_float(2.71828, 4);

@@ -1,3 +1,4 @@
+#include "misa.h"
 #include "tests/c/cell_width.asm"
 #include "tests/c/local_func.asm"
 

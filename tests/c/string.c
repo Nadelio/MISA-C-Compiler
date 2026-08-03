@@ -1,3 +1,5 @@
+#include "misa.h"
+
 int main(void) {
     char* test = "Hello, World!";
     println_string(test);

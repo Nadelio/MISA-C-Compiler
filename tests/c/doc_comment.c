@@ -1,3 +1,5 @@
+#include "misa.h"
+
 int x = 0;
 
 /// @brief This prints "foo" to the console

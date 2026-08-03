@@ -1,3 +1,5 @@
+#include "misa.h"
+
 char buf[256];
 
 int main(void) {
