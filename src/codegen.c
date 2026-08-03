@@ -12,24 +12,29 @@ typedef struct {
 } BuiltinInfo;
 
 static const BuiltinInfo builtin_table[] = {
-	{ BUILTIN_PRINT_INT,             "SYS_PRINT_INT",             0 },
-	{ BUILTIN_PRINT_FLOAT,           "SYS_PRINT_FLOAT",           0 },
-	{ BUILTIN_PRINT_STRING,          "SYS_PRINT_STRING",          1 }, 
-	{ BUILTIN_DRAW_RECT,             "SYS_DRAW_RECT",             0 },
-	{ BUILTIN_DRAW_TEXTURE,          "SYS_DRAW_TEXTURE",          1 }, 
-	{ BUILTIN_DRAW_TEXTURE_REGION,   "SYS_DRAW_TEXTURE_REGION",   1 }, 
-	{ BUILTIN_STORAGE_READ,          "SYS_STORAGE_READ",          1 }, 
-	{ BUILTIN_STORAGE_WRITE,         "SYS_STORAGE_WRITE",         2 }, 
-	{ BUILTIN_MEM_COPY,              "SYS_MEM_COPY",              3 }, 
-	{ BUILTIN_MEM_SET,               "SYS_MEM_SET",               1 }, 
-	{ BUILTIN_PRESERVE_BACK_BUFFER,  "SYS_PRESERVE_BACK_BUFFER",  0 },
-	{ BUILTIN_PRESERVE_FRONT_BUFFER, "SYS_PRESERVE_FRONT_BUFFER", 0 },
-	{ BUILTIN_GET_INPUT,             "SYS_GET_INPUT",             0 },
-	{ BUILTIN_GET_UNIX_TIME,         "SYS_GET_UNIX_TIME",         0 },
-	{ BUILTIN_GET_RUNNING_TIME,      "SYS_GET_RUNNING_TIME",      0 },
-	{ BUILTIN_GET_UPDATE_DELTA,      "SYS_GET_UPDATE_DELTA",      0 },
-	{ BUILTIN_GET_DRAW_DELTA,        "SYS_GET_DRAW_DELTA",        0 },
-	{ BUILTIN_SET_RNG_SEED,          "SYS_SET_RNG_SEED",          0 },
+	{ BUILTIN_PRINT_INT,               "SYS_PRINT_INT",               0 },
+	{ BUILTIN_PRINT_LINE_INT,          "SYS_PRINT_LINE_INT",          0 },
+	{ BUILTIN_PRINT_FLOAT,             "SYS_PRINT_FLOAT",             0 },
+	{ BUILTIN_PRINT_LINE_FLOAT,        "SYS_PRINT_LINE_FLOAT",        0 },
+	{ BUILTIN_PRINT_STRING,            "SYS_PRINT_STRING",            1 },
+	{ BUILTIN_PRINT_LINE_STRING,       "SYS_PRINT_LINE_STRING",       1 },
+	{ BUILTIN_DRAW_RECT,               "SYS_DRAW_RECT",               0 },
+	{ BUILTIN_DRAW_TEXTURE,            "SYS_DRAW_TEXTURE",            1 }, 
+	{ BUILTIN_DRAW_TEXTURE_REGION,     "SYS_DRAW_TEXTURE_REGION",     1 }, 
+	{ BUILTIN_STORAGE_READ,            "SYS_STORAGE_READ",            1 }, 
+	{ BUILTIN_STORAGE_WRITE,           "SYS_STORAGE_WRITE",           2 }, 
+	{ BUILTIN_MEM_COPY,                "SYS_MEM_COPY",                3 }, 
+	{ BUILTIN_MEM_SET,                 "SYS_MEM_SET",                 1 }, 
+	{ BUILTIN_PRESERVE_BACK_BUFFER,    "SYS_PRESERVE_BACK_BUFFER",    0 },
+	{ BUILTIN_PRESERVE_FRONT_BUFFER,   "SYS_PRESERVE_FRONT_BUFFER",   0 },
+	{ BUILTIN_GET_INPUT,               "SYS_GET_INPUT",               0 },
+	{ BUILTIN_GET_TERMINAL_INPUT_SIZE, "SYS_GET_TERMINAL_INPUT_SIZE", 0 },
+	{ BUILTIN_READ_TERMINAL_INPUT,     "SYS_READ_TERMINAL_INPUT",     1 },
+	{ BUILTIN_GET_UNIX_TIME,           "SYS_GET_UNIX_TIME",           0 },
+	{ BUILTIN_GET_RUNNING_TIME,        "SYS_GET_RUNNING_TIME",        0 },
+	{ BUILTIN_GET_UPDATE_DELTA,        "SYS_GET_UPDATE_DELTA",        0 },
+	{ BUILTIN_GET_DRAW_DELTA,          "SYS_GET_DRAW_DELTA",          0 },
+	{ BUILTIN_SET_RNG_SEED,            "SYS_SET_RNG_SEED",            0 },
 	{ BUILTIN_NONE, NULL, 0 }
 };
 
@@ -548,13 +553,17 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 			break;
 		}
 		if (sym->kind == SYM_FUNC) {
-			
+			if (sym->builtin_id != BUILTIN_NONE) {
+				fprintf(stderr, "[Error] cannot take address of built-in '%s'\n", sym->name);
+				cg->had_error = 1;
+				emit(cg, "mov %s, zr", rn);
+				break;
+			}
 			const char *fl2 = sym->func_label ? sym->func_label : sym->name;
 			emit(cg, "tpa %s, %s", rn, fl2);
 			break;
 		}
-		if (sym->type && (sym->type->kind == TY_ARRAY ||
-		                  (sym->type->kind == TY_POINTER && sym->is_global))) {
+		if (sym->type && sym->type->kind == TY_ARRAY) {
 			if (sym->is_global) {
 				emit(cg, "tpa %s, %s", rn, sym->asm_label);
 			} else {
@@ -1040,7 +1049,7 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 					if (val >= 0) sname = syscall_name_by_id((int)val);
 				}
 				if (!sname) {
-					fprintf(stderr, "error: syscall() first argument must be a compile-time SYS_* constant\n");
+					fprintf(stderr, "[Error] syscall() first argument must be a compile-time SYS_* constant\n");
 					cg->had_error = 1;
 				} else {
 					for (i = 0; i < argc - 1; i++)
@@ -1070,13 +1079,17 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 			} else {
 				int cr = cg_expr(cg, n->u.call.callee, fl);
 				emit(cg, "tpr %s", temp_name(cr));
-				emit(cg, "cala %s", temp_name(cr));
+				emit(cg, "sub %s, @__ical+", temp_name(cr));
+				fprintf(cg->out, "@__ical:\n");
+				emit(cg, "cal %s", temp_name(cr));
 				cg_free_temp(cg, cr);
 			}
 		} else {
 			int cr = cg_expr(cg, n->u.call.callee, fl);
 			emit(cg, "tpr %s", temp_name(cr));
-			emit(cg, "cala %s", temp_name(cr));
+			emit(cg, "sub %s, @__ical+", temp_name(cr));
+			fprintf(cg->out, "@__ical:\n");
+			emit(cg, "cal %s", temp_name(cr));
 			cg_free_temp(cg, cr);
 		}
 
@@ -1140,6 +1153,20 @@ static void cg_stmt(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 						cg_free_temp(cg, ar);
 						items = items->next;
 						i++;
+					}
+					{
+						int total = n->u.var.var_type->array_len > i ? n->u.var.var_type->array_len : i;
+						int zr = cg_alloc_temp(cg);
+						emit(cg, "mov %s, zr", temp_name(zr));
+						int j;
+						for (j = i; j < total; j++) {
+							int ar = cg_alloc_temp(cg);
+							emit(cg, "add %s, fp, %d", temp_name(ar), base_off + j * elem_size);
+							emit(cg, "mov ea, %s", temp_name(ar));
+							emit(cg, "ste %s, 0, %s", elem_misa, temp_name(zr));
+							cg_free_temp(cg, ar);
+						}
+						cg_free_temp(cg, zr);
 					}
 				}
 			} else {
@@ -1652,14 +1679,28 @@ static void cg_global_var(CodeGen *cg, AstNode *n) {
 		fprintf(cg->out, "%s:\temb %s %lld\n", lbl,
 		    type_misa_name(t), n->u.var.init->u.int_lit.value);
 	} else if (n->u.var.init && n->u.var.init->kind == AST_STRING_LIT) {
-		fprintf(cg->out, "%s:\temb string \"%s\"\n", lbl,
-		    n->u.var.init->u.str_lit.value);
+		if (t->kind == TY_ARRAY && t->array_len > 0) {
+			const char *s = n->u.var.init->u.str_lit.value;
+			int slen = (int)strlen(s) + 1; /* include null terminator */
+			Type *elem_t = t->base ? t->base : t;
+			fprintf(cg->out, "%s:\temb %s", lbl, type_misa_name(elem_t));
+			int i;
+			for (i = 0; i < slen && i < t->array_len; i++)
+				fprintf(cg->out, i ? ", %d" : " %d", (unsigned char)s[i]);
+			for (i = slen; i < t->array_len; i++)
+				fprintf(cg->out, ", 0");
+			fprintf(cg->out, "\n");
+		} else {
+			fprintf(cg->out, "%s:\temb string \"%s\"\n", lbl,
+			    n->u.var.init->u.str_lit.value);
+		}
 	} else if (t->kind == TY_ARRAY) {
 		if (n->u.var.init && n->u.var.init->kind == AST_INIT_LIST) {
 			Type *elem_t = t->base ? t->base : t;
 			fprintf(cg->out, "%s:\temb %s", lbl, type_misa_name(elem_t));
 			AstList *items = n->u.var.init->u.init_list.items;
 			int first = 1;
+			int init_count = 0;
 			while (items) {
 				AstNode *elem = items->node;
 				if (!first) fprintf(cg->out, ",");
@@ -1679,7 +1720,14 @@ static void cg_global_var(CodeGen *cg, AstNode *n) {
 					fprintf(cg->out, " 0");
 				}
 				first = 0;
+				init_count++;
 				items = items->next;
+			}
+			{
+				int total = t->array_len > init_count ? t->array_len : init_count;
+				int i;
+				for (i = init_count; i < total; i++)
+					fprintf(cg->out, ", 0");
 			}
 			fprintf(cg->out, "\n");
 		} else {
@@ -1824,7 +1872,7 @@ void codegen_emit(CodeGen *cg, AstNode *unit) {
 		const char *path = unit->u.unit.asm_includes[i];
 		FILE *af = fopen(path, "r");
 		if (!af) {
-			fprintf(stderr, "codegen: cannot open asm include '%s'\n", path);
+			fprintf(stderr, "[ERROR] (codegen) cannot open asm include '%s'\n", path);
 			cg->had_error = 1;
 			continue;
 		}

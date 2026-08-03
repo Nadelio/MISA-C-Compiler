@@ -486,11 +486,17 @@ void sema_init(Sema *s, SymTab *st) {
 	s->symtab = st;
 
 	
-	reg_builtin(s, "print_int", BUILTIN_PRINT_INT,    type_make_void(), 1,
+	reg_builtin(s, "print_int",        BUILTIN_PRINT_INT,       type_make_void(), 1,
 	    type_make_int(0));
-	reg_builtin(s, "print_float", BUILTIN_PRINT_FLOAT,  type_make_void(), 2,
+	reg_builtin(s, "println_int",   BUILTIN_PRINT_LINE_INT,  type_make_void(), 1,
+	    type_make_int(0));
+	reg_builtin(s, "print_float",      BUILTIN_PRINT_FLOAT,     type_make_void(), 2,
 	    type_make_float(), type_make_int(0));
-	reg_builtin(s, "print_string", BUILTIN_PRINT_STRING, type_make_void(), 1,
+	reg_builtin(s, "println_float", BUILTIN_PRINT_LINE_FLOAT, type_make_void(), 2,
+	    type_make_float(), type_make_int(0));
+	reg_builtin(s, "print_string",     BUILTIN_PRINT_STRING,    type_make_void(), 1,
+	    type_make_pointer(type_make_char(0)));
+	reg_builtin(s, "println_string", BUILTIN_PRINT_LINE_STRING, type_make_void(), 1,
 	    type_make_pointer(type_make_char(0)));
 	reg_builtin(s, "draw_rect",   BUILTIN_DRAW_RECT,   type_make_void(), 5,
 	    type_make_int(0), type_make_int(0), type_make_int(0),
@@ -515,7 +521,10 @@ void sema_init(Sema *s, SymTab *st) {
 	    type_make_pointer(type_make_void()), type_make_int(0), type_make_int(0));
 	reg_builtin(s, "preserve_back_buffer",  BUILTIN_PRESERVE_BACK_BUFFER,  type_make_void(), 0);
 	reg_builtin(s, "preserve_front_buffer", BUILTIN_PRESERVE_FRONT_BUFFER, type_make_void(), 0);
-	reg_builtin(s, "get_input",        BUILTIN_GET_INPUT,        type_make_int(0),  0);
+	reg_builtin(s, "get_input",               BUILTIN_GET_INPUT,               type_make_int(0),  0);
+	reg_builtin(s, "get_terminal_input_size", BUILTIN_GET_TERMINAL_INPUT_SIZE, type_make_int(0),  0);
+	reg_builtin(s, "read_terminal_input",     BUILTIN_READ_TERMINAL_INPUT,     type_make_int(0),  2,
+	    type_make_pointer(type_make_char(0)), type_make_int(0));
 	reg_builtin(s, "get_unix_time",    BUILTIN_GET_UNIX_TIME,    type_make_int(0),  0);
 	reg_builtin(s, "get_running_time", BUILTIN_GET_RUNNING_TIME, type_make_float(), 0);
 	reg_builtin(s, "get_update_delta", BUILTIN_GET_UPDATE_DELTA, type_make_float(), 0);
@@ -525,24 +534,30 @@ void sema_init(Sema *s, SymTab *st) {
 
 	{
 		static const struct { const char *name; int val; } sysc[] = {
-			{ "SYS_PRINT_INT",             0  },
-			{ "SYS_PRINT_FLOAT",           1  },
-			{ "SYS_PRINT_STRING",          2  },
-			{ "SYS_DRAW_RECT",             3  },
-			{ "SYS_DRAW_TEXTURE",          4  },
-			{ "SYS_DRAW_TEXTURE_REGION",   5  },
-			{ "SYS_STORAGE_READ",          6  },
-			{ "SYS_STORAGE_WRITE",         7  },
-			{ "SYS_MEM_COPY",              8  },
-			{ "SYS_MEM_SET",               9  },
-			{ "SYS_PRESERVE_BACK_BUFFER",  10 },
-			{ "SYS_PRESERVE_FRONT_BUFFER", 11 },
-			{ "SYS_GET_INPUT",             12 },
-			{ "SYS_GET_UNIX_TIME",         13 },
-			{ "SYS_GET_RUNNING_TIME",      14 },
-			{ "SYS_GET_UPDATE_DELTA",      15 },
-			{ "SYS_GET_DRAW_DELTA",        16 },
-			{ "SYS_SET_RNG_SEED",          17 },
+			{ "SYS_PRINT_INT",                0  },
+			{ "SYS_PRINT_LINE_INT",           1  },
+			{ "SYS_PRINT_FLOAT",              2  },
+			{ "SYS_PRINT_LINE_FLOAT",         3  },
+			{ "SYS_PRINT_STRING",             4  },
+			{ "SYS_PRINT_LINE_STRING",        5  },
+			{ "SYS_DRAW_RECT",                6  },
+			{ "SYS_DRAW_TEXTURE",             7  },
+			{ "SYS_DRAW_TEXTURE_REGION",      8  },
+			{ "SYS_PRESERVE_BACK_BUFFER",     9  },
+			{ "SYS_PRESERVE_FRONT_BUFFER",    10 },
+			{ "SYS_GET_INPUT",                11 },
+			{ "SYS_GET_TERMINAL_INPUT_SIZE",  12 },
+			{ "SYS_READ_TERMINAL_INPUT",      13 },
+			{ "SYS_STORAGE_READ",             14 },
+			{ "SYS_STORAGE_WRITE",            15 },
+			{ "SYS_MEM_COPY",                 16 },
+			{ "SYS_MEM_SET",                  17 },
+			{ "SYS_GET_UNIX_TIME",            18 },
+			{ "SYS_GET_RUNNING_TIME",         19 },
+			{ "SYS_GET_UPDATE_DELTA",         20 },
+			{ "SYS_GET_DRAW_DELTA",           21 },
+			{ "SYS_SET_RNG_SEED",             22 },
+			{ "SYS_ALLOW_UNSAFE_JUMP",        23 },
 			{ NULL, 0 }
 		};
 		int i;

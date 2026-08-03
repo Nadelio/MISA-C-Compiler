@@ -6,23 +6,25 @@ int max(int a, int b) {
     return b;
 }
 
-int sum_array(int *arr, int n) {
+int sum_array(int *arr, int size) {
     int i;
     int s;
     s = 0;
-    for (i = 0; i < n; i = i + 1) {
+    for (i = 0; i < size; i = i + 1) {
         s = s + arr[i];
     }
     return s;
 }
 
-char foo[2] = { 0, 1 };
+char foo[3] = { 0, 1 };
 
 int main() {
-    int arr[4] = { 1, 2, 3, 3 }; // array initializer
+    int arr[5] = { 1, 2, 3, 3 }; // array initializer
     int result;
     greeting = "hello";
     arr[3] = 4;
     result = sum_array(arr, 4);
+    println_string(greeting);
+    println_int(result);
     return max(result, global_x);
 }

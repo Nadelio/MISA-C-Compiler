@@ -12,6 +12,7 @@ int main() {
     for (i = 0; i < 8; i = i + 1) {
         result = fib(i);
         g_count = g_count + 1;
+        println_int(result);
     }
-    return result;
+    return 0;
 }

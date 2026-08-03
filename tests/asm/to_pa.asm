@@ -2,17 +2,11 @@ _start:
 	cal main_
 	exit
 
-sbmk "test2_(s: i8t*): void"
-##
-## Parameters:
-## > a0 - s, is i8t*
-## Returns: NONE
-## Additional Implementation Notes:
 test2_:
 	sub sp, 4
 	mov ea, fp
 	ste u32t, -4, a0
-	mov t1, 2
+	mov t1, 4
 	psh t0
 	psh t1
 	mov ea, fp

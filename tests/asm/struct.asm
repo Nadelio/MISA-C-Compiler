@@ -2,14 +2,6 @@ _start:
 	cal main_
 	exit
 
-sbmk "dot_(a: u32t, b: u32t): i32t"
-##
-## Parameters:
-## > a0 - a, is u32t
-## > a1 - b, is u32t
-## Returns:
-## < a0 - return value, is i32t
-## Additional Implementation Notes:
 dot_:
 	sub sp, 8
 	mov ea, fp
@@ -43,13 +35,6 @@ dot_:
 	add sp, 8
 	ret
 
-sbmk "classify_(v: i32t): i32t"
-##
-## Parameters:
-## > a0 - v, is i32t
-## Returns:
-## < a0 - return value, is i32t
-## Additional Implementation Notes:
 classify_:
 	sub sp, 4
 	mov ea, fp
@@ -82,12 +67,6 @@ __L0:
 	add sp, 4
 	ret
 
-sbmk "main_(): i32t"
-##
-## Parameters: NONE
-## Returns:
-## < a0 - return value, is i32t
-## Additional Implementation Notes:
 main_:
 	sub sp, 16
 	mov t1, 3
@@ -111,16 +90,22 @@ main_:
 	ste i32t, 4, t1
 	mov t0, t1
 	psh t0
-	add t0, fp, -8
+	psh t1
+	add t1, fp, -8
 	add t2, fp, -16
 	mov a1, t2
-	mov a0, t0
+	mov a0, t1
 	cal dot_
+	mov t0, a0
+	pop t1
+	mov a0, t0
+	cal classify_
 	mov t1, a0
 	pop t0
 	mov a0, t1
-	cal classify_
+	syscall SYS_PRINT_LINE_INT
 	mov t0, a0
+	mov t0, 0
 	mov a0, t0
 	add sp, 16
 	ret
