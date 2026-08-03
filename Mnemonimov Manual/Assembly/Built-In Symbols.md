@@ -49,6 +49,20 @@ You can view and adjust the console's keybindings in the Settings menu, accessib
 
 ---
 
+## Mouse Button Constants
+
+Constants representing the mouse input state. Used as masks in bitwise operations to test which mouse buttons are pressed:
+
+| Keyword                | Value |
+|------------------------|-------|
+| `MOUSE_BTN_LEFT`       | 1     |
+| `MOUSE_BTN_RIGHT`      | 2     |
+| `MOUSE_BTN_MIDDLE`     | 4     |
+| `MOUSE_BTN_WHEEL_UP`   | 8     |
+| `MOUSE_BTN_WHEEL_DOWN` | 16    |
+
+---
+
 ## Variables
 
 Built-in variables exposing the internal assembler state:

@@ -67,8 +67,16 @@ Preserves the front buffer when exiting the `_draw` process, instead of replacin
 ## Input
 
 **SYS_GET_INPUT**
-Gets the current user input state.
+Gets the current user input state. See [Built-In Symbols](../Assembly/Built-In%20Symbols.md) for a list of button constants.
 Returns: `a0:input_state`
+
+**SYS_GET_MOUSE_POSITION**
+Gets the current mouse position in screen coordinates.
+Returns: `a0:pos_x, a1:pos_y`
+
+**SYS_GET_MOUSE_BUTTON_INPUT**
+Gets the current mouse button input state. See [Built-In Symbols](../Assembly/Built-In%20Symbols.md) for a list of mouse button constants.
+Returns: `a0:mouse_button_input_state`
 
 **SYS_GET_TERMINAL_INPUT_SIZE**
 Gets the size of the next string in the terminal input queue, including the null-termination byte. Returns a `0` if the terminal input queue is empty.

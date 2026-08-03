@@ -1,7 +1,7 @@
 # Input
 
 ## Reacting to User Input
-Mnemonimov implements two types of input: button and terminal.
+Mnemonimov implements three types of input: button, mouse, and terminal.
 
 ---
 
@@ -12,7 +12,18 @@ By default, all buttons are mapped to your keyboard, but you can change the keyb
 
 Programs can react to button input through the `_input` process and by using the system call `SYS_GET_INPUT` to fethc the input state. You can then use bitmasking to check whether a specific button is pressed.
 
-See [Built-in Symbols](../Assembly/Built-In%20Symbols.md) for a list of button constants, and for instructions to view and modifiy their keybindings.
+See [Built-in Symbols](../Assembly/Built-In%20Symbols.md) for a list of button constants, and for instructions to view and modify their keybindings.
+
+---
+
+## Mouse Input
+Mnemonimov supports mouse input for creating programs with graphical user interfaces.
+
+The mouse position can be obtained with the system call `SYS_GET_MOUSE_POSITION`, which returns the mouse position in screen coordinates.
+
+Mouse button input works just like the virtual button input. Programs can react to mouse button input through the `_mouse_button_input` process and by using the system call `SYS_GET_MOUSE_BUTTON_INPUT` to fetch the input state. You can then use bitmasking to check whether a specific button is pressed.
+
+See [Built-in Symbols](../Assembly/Built-In%20Symbols.md) for a list of mouse button constants.
 
 ---
 

@@ -1,3 +1,5 @@
+#include "misa.h"
+
 int g_count;
 
 int fib(int n) {

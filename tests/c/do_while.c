@@ -1,3 +1,5 @@
+#include "misa.h"
+
 int main(void) {
     int i = 5;
     do {
