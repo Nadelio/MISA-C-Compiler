@@ -137,7 +137,7 @@ jobs:
             ## Usage
 
             ```
-            misacc <input.c> [-o output.misa]
+            misacc <input.c> [-o output.misa] [--doc|-gd]
             ```
 
             | Argument | Description |
