@@ -4,17 +4,21 @@
 
 Types for data directives and load/store instructions:
 
-| Type   | Description                              |
-|--------|------------------------------------------|
-| i8t    | Signed 8-bit integer                     |
-| u8t    | Unsigned 8-bit integer                   |
-| i16t   | Signed 16-bit integer                    |
-| u16t   | Unsigned 16-bit integer                  |
-| i32t   | Signed 32-bit integer                    |
-| u32t   | Unsigned 32-bit integer                  |
-| f32t   | 32-bit float                             |
-| string | Null-terminated ASCII string (embed-only)|
-| file   | .png or .bin file (embed-only)           |
+| Type   | Description                  | Notes      |
+|--------|------------------------------|------------|
+| i8t    | Signed 8-bit integer         |            |
+| u8t    | Unsigned 8-bit integer       |            |
+| i16t   | Signed 16-bit integer        |            |
+| u16t   | Unsigned 16-bit integer      |            |
+| i32t   | Signed 32-bit integer        |            |
+| u32t   | Unsigned 32-bit integer      |            |
+| f32t   | 32-bit float                 |            |
+| string | Null-terminated ASCII string | Embed-only |
+| file   | .png or .bin file            | Embed-only |
+
+Note that non-scalar[^1] types, like `string` and `file`, can only be used in the `emb` directive.
+
+[^1]: Scalar types represent a single value, like an integer or a float. Non-scalar types represent multiple values, like a string or a file, which are collections of bytes.
 
 ---
 

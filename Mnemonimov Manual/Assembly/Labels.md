@@ -1,10 +1,12 @@
 # Labels
 
-Label directives enable you to create aliases for **pa-relative¹ addresses** that you can reference in your code. Labels are classified into two use cases: data label, when used to reference a segment of data, and code block label, when used to reference functions and other code locations. MISA implements three types of labels: (global) label, local label, and reusable label.
+Label directives enable you to create aliases for **relativ[^1]¹ addresses[^2]** that you can reference in your code. Labels are classified into two use cases: data label, when used to reference a segment of data, and code block label, when used to reference functions and other code locations. MISA implements three types of labels: (global) label, local label, and reusable label.
 
 All labels support forward referencing. This means they can be referenced on lines that come before their definition.
 
-¹ MISA uses relative rather than absolute addressing. See the *Relocatable Code* section on the Memory page for details.
+[^1]: MISA uses relative rather than absolute addressing. See the *Relocatable Code* section on the [Memory](../Machine%20Model/Memory.md) page for details.
+
+[^2]: Labels evaluate to pa-relative addresses by default, except when used in pc-relative Control Flow instructions. In this case, they evaluate to pc-relative addresses.
 
 ---
 

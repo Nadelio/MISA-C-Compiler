@@ -6,10 +6,13 @@ Logic and bitwise instructions perform logical operations. They make it possible
 
 ## Comparison
 
-**`cmp` → Compare**
+**`cmp` -> Compare**
 Compares two values using the specified condition and writes the result to the comparison register.
 Operands: `Condition, a, b`
-Pseudocode: `cr = (a Condition b) ? 1 : 0`
+Pseudocode:
+```c
+cr = (a Condition b) ? 1 : 0;
+```
 
 Conditions for the `cmp` instruction:
 
@@ -37,56 +40,110 @@ Note: (U) is unsigned; ε is epsilon.
 
 ## Bitwise
 
-**`not` → Not [c]**
+**`not` -> Not [c]**
 Computes the bitwise NOT of a value.
 Operands: `[dest], value`
-Pseudocode: `dest = ~value`
-[c] Pseudocode: `value = ~value`
+Pseudocode: 
+```c
+dest = ~value;
+```
+[c] Pseudocode: 
+```c
+value = ~value;
+```
 
-**`and` → And [c]**
+**`and` -> And [c]**
 Computes the bitwise AND of two values.
 Operands: `[dest], a, b`
-Pseudocode: `dest = a & b`
-[c] Pseudocode: `a &= b`
+Pseudocode: 
+```c
+dest = a & b;
+```
+[c] Pseudocode: 
+```c
+a &= b;
+```
 
-**`orr` → Or [c]**
+**`orr` -> Or [c]**
 Computes the bitwise OR of two values.
 Operands: `[dest], a, b`
-Pseudocode: `dest = a | b`
-[c] Pseudocode: `a |= b`
+Pseudocode: 
+```c
+dest = a | b;
+```
+[c] Pseudocode: 
+```c
+a |= b;
+```
 
-**`xor` → Xor [c]**
+**`xor` -> Xor [c]**
 Computes the bitwise XOR of two values.
 Operands: `[dest], a, b`
-Pseudocode: `dest = a ^ b`
-[c] Pseudocode: `a ^= b`
+Pseudocode: 
+```c
+dest = a ^ b;
+```
+[c] Pseudocode: 
+```c
+a ^= b;
+```
 
-**`sar` → Shift Arithmetic Right [c]**
+**`sar` -> Shift Arithmetic Right [c]**
 Shifts a value right while preserving the sign bit.
 Operands: `[dest], value, shift`
-Pseudocode: `dest = value >> shift`
-[c] Pseudocode: `value >>= shift`
+Pseudocode: 
+```c
+dest = value >> shift;
+```
+[c] Pseudocode: 
+```c
+value >>= shift;
+```
 
-**`sll` → Shift Logical Left [c]**
+**`sll` -> Shift Logical Left [c]**
 Shifts a value left, inserting zeros.
 Operands: `[dest], value, shift`
-Pseudocode: `dest = value << shift`
-[c] Pseudocode: `value <<= shift`
+Pseudocode: 
+```c
+dest = value << shift
+```
+[c] Pseudocode: 
+```c
+value <<= shift
+```
 
-**`slr` → Shift Logical Right [c]**
+**`slr` -> Shift Logical Right [c]**
 Shifts a value right, inserting zeros.
 Operands: `[dest], value, shift`
-Pseudocode: `dest = value >>> shift`
-[c] Pseudocode: `value >>>= shift`
+Pseudocode: 
+```c
+dest = value >>> shift
+```
+[c] Pseudocode: 
+```c
+value >>>= shift
+```
 
-**`rol` → Rotate Left [c]**
+**`rol` -> Rotate Left [c]**
 Rotates a value left by the specified amount.
 Operands: `[dest], value, shift`
-Pseudocode: `dest = rotate_left(value, shift)`
-[c] Pseudocode: `value = rotate_left(value, shift)`
+Pseudocode: 
+```c
+dest = rotate_left(value, shift)
+```
+[c] Pseudocode: 
+```c
+value = rotate_left(value, shift)
+```
 
-**`ror` → Rotate Right [c]**
+**`ror` -> Rotate Right [c]**
 Rotates a value right by the specified amount.
 Operands: `[dest], value, shift`
-Pseudocode: `dest = rotate_right(value, shift)`
-[c] Pseudocode: `value = rotate_right(value, shift)`
+Pseudocode: 
+```c
+dest = rotate_right(value, shift)
+```
+[c] Pseudocode: 
+```c
+value = rotate_right(value, shift)
+```

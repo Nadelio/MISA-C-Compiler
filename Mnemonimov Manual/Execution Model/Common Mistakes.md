@@ -15,3 +15,7 @@
 **Symptom:** values previously stored in registers are no longer present.
 **Cause:** registers were used to preserve data across execution of a built-in process, or to pass data between processes.
 **Solution:** use memory to persist data across process executions and for inter-process communication. Each process has its own private register file, which is discarded when the process terminates.
+
+**Symptom:** the same program behaves differently between runs.
+**Cause:** the program relies on specific process execution order. Process scheduling is non-deterministic.
+**Solution:** avoid assumptions about the exact timing and ordering of process execution. Because `_update` and `_draw` are scheduled approximately every 16 ms, small timing variations may cause more or fewer instructions to execute before a context switch occurs.

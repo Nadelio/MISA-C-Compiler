@@ -52,7 +52,7 @@ All memory access should be anchored to a stable reference. You must **never** r
 
 **Program Address as Anchor**
 These are the recommended methods for accessing memory:
-- Using labels with `lod` and `str`, as they are already pa-relative.
+- Using labels with `lod` and `str`, as they are already pa-relative when used in these instructions.
 - Using an absolute effective address computed through `cea` (which incorporates a pa-relative base address) for use with `lde` and `ste`.
 
 **Alternative Anchors**

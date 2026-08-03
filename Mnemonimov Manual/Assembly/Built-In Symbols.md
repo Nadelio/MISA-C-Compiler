@@ -15,8 +15,16 @@ Common built-in constants:
 | `EXP1`         | 2.7182818...      |
 | `INF`          | Positive Infinity |
 | `NAN`          | Not a Number      |
-| `SCREEN_WIDTH` | 320               |
-| `SCREEN_HEIGHT`| 240               |
+
+---
+
+## ABI Constants
+
+| Keyword                   | Value             |
+|---------------------------|-------------------|
+| `SCREEN_WIDTH`            | 320               |
+| `SCREEN_HEIGHT`           | 240               |
+| `MAX_TERMINAL_INPUT_SIZE` | 256               |
 
 ---
 

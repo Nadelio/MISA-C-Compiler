@@ -42,24 +42,30 @@ static const BuiltinInfo *builtin_lookup(BuiltinId id) {
 
 typedef struct { int id; const char *name; } SyscallNameEntry;
 static const SyscallNameEntry syscall_name_table[] = {
-	{  0, "SYS_PRINT_INT"             },
-	{  1, "SYS_PRINT_FLOAT"           },
-	{  2, "SYS_PRINT_STRING"          },
-	{  3, "SYS_DRAW_RECT"             },
-	{  4, "SYS_DRAW_TEXTURE"          },
-	{  5, "SYS_DRAW_TEXTURE_REGION"   },
-	{  6, "SYS_STORAGE_READ"          },
-	{  7, "SYS_STORAGE_WRITE"         },
-	{  8, "SYS_MEM_COPY"              },
-	{  9, "SYS_MEM_SET"               },
-	{ 10, "SYS_PRESERVE_BACK_BUFFER"  },
-	{ 11, "SYS_PRESERVE_FRONT_BUFFER" },
-	{ 12, "SYS_GET_INPUT"             },
-	{ 13, "SYS_GET_UNIX_TIME"         },
-	{ 14, "SYS_GET_RUNNING_TIME"      },
-	{ 15, "SYS_GET_UPDATE_DELTA"      },
-	{ 16, "SYS_GET_DRAW_DELTA"        },
-	{ 17, "SYS_SET_RNG_SEED"          },
+	{  0, "SYS_PRINT_INT"                  },
+	{  1, "SYS_PRINT_LINE_INT"             },
+	{  2, "SYS_PRINT_FLOAT"               },
+	{  3, "SYS_PRINT_LINE_FLOAT"          },
+	{  4, "SYS_PRINT_STRING"              },
+	{  5, "SYS_PRINT_LINE_STRING"         },
+	{  6, "SYS_DRAW_RECT"                 },
+	{  7, "SYS_DRAW_TEXTURE"              },
+	{  8, "SYS_DRAW_TEXTURE_REGION"       },
+	{  9, "SYS_PRESERVE_BACK_BUFFER"      },
+	{ 10, "SYS_PRESERVE_FRONT_BUFFER"     },
+	{ 11, "SYS_GET_INPUT"                 },
+	{ 12, "SYS_GET_TERMINAL_INPUT_SIZE"   },
+	{ 13, "SYS_READ_TERMINAL_INPUT"       },
+	{ 14, "SYS_STORAGE_READ"              },
+	{ 15, "SYS_STORAGE_WRITE"             },
+	{ 16, "SYS_MEM_COPY"                  },
+	{ 17, "SYS_MEM_SET"                   },
+	{ 18, "SYS_GET_UNIX_TIME"             },
+	{ 19, "SYS_GET_RUNNING_TIME"          },
+	{ 20, "SYS_GET_UPDATE_DELTA"          },
+	{ 21, "SYS_GET_DRAW_DELTA"            },
+	{ 22, "SYS_SET_RNG_SEED"              },
+	{ 23, "SYS_ALLOW_UNSAFE_JUMP"         },
 	{ -1, NULL }
 };
 
@@ -664,8 +670,8 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 			int lr = cg_expr(cg, n->u.binary.left, fl);
 			emit(cg, "mov %s, %s", rn, temp_name(lr));
 			cg_free_temp(cg, lr);
-			emit(cg, "cmp eq, %s, zr", rn);
-			emit(cg, "jtr %s", end_lbl);
+			emit(cg, "cmp neq, %s, zr", rn);
+			emit(cg, "jfs %s", end_lbl);
 			int rr = cg_expr(cg, n->u.binary.right, fl);
 			emit(cg, "cmp neq, %s, zr", temp_name(rr));
 			emit(cg, "sel %s, 1, 0", rn);
@@ -876,9 +882,9 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 		char *else_lbl = cg_new_label(cg);
 		char *end_lbl  = cg_new_label(cg);
 		int cond_r = cg_expr(cg, n->u.ternary.cond, fl);
-		emit(cg, "cmp eq, %s, zr", temp_name(cond_r));
+		emit(cg, "cmp neq, %s, zr", temp_name(cond_r));
 		cg_free_temp(cg, cond_r);
-		emit(cg, "jtr %s", else_lbl);
+		emit(cg, "jfs %s", else_lbl);
 		int tr = cg_expr(cg, n->u.ternary.then_expr, fl);
 		emit(cg, "mov %s, %s", rn, temp_name(tr));
 		cg_free_temp(cg, tr);
@@ -1064,17 +1070,13 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 			} else {
 				int cr = cg_expr(cg, n->u.call.callee, fl);
 				emit(cg, "tpr %s", temp_name(cr));
-				emit(cg, "sub %s, @__ical+", temp_name(cr));
-				fprintf(cg->out, "@__ical:\n");
-				emit(cg, "cal %s", temp_name(cr));
+				emit(cg, "cala %s", temp_name(cr));
 				cg_free_temp(cg, cr);
 			}
 		} else {
 			int cr = cg_expr(cg, n->u.call.callee, fl);
 			emit(cg, "tpr %s", temp_name(cr));
-			emit(cg, "sub %s, @__ical+", temp_name(cr));
-			fprintf(cg->out, "@__ical:\n");
-			emit(cg, "cal %s", temp_name(cr));
+			emit(cg, "cala %s", temp_name(cr));
 			cg_free_temp(cg, cr);
 		}
 
@@ -1187,9 +1189,9 @@ static void cg_stmt(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 
 		emit_label(cg, loop_lbl);
 		int cr = cg_expr(cg, n->u.while_stmt.cond, fl);
-		emit(cg, "cmp eq, %s, zr", temp_name(cr));
+		emit(cg, "cmp neq, %s, zr", temp_name(cr));
 		cg_free_temp(cg, cr);
-		emit(cg, "jtr %s", break_lbl);
+		emit(cg, "jfs %s", break_lbl);
 		cg_stmt(cg, n->u.while_stmt.body, fl);
 		emit(cg, "jmp %s", loop_lbl);
 		emit_label(cg, break_lbl);
@@ -1237,9 +1239,9 @@ static void cg_stmt(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 		emit_label(cg, loop_lbl);
 		if (n->u.for_stmt.cond) {
 			int cr = cg_expr(cg, n->u.for_stmt.cond, fl);
-			emit(cg, "cmp eq, %s, zr", temp_name(cr));
+			emit(cg, "cmp neq, %s, zr", temp_name(cr));
 			cg_free_temp(cg, cr);
-			emit(cg, "jtr %s", break_lbl);
+			emit(cg, "jfs %s", break_lbl);
 		}
 		cg_stmt(cg, n->u.for_stmt.body, fl);
 		emit_label(cg, incr_lbl);

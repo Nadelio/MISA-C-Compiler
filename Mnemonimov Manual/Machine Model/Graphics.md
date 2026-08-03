@@ -30,7 +30,7 @@ Luma is an 8-bit value stored as a single byte per pixel. Binary transparency an
 - value `0` represents full transparency.
 - values in the range `[1, 255]` represent brightness.
 
-Because the value zero is reserved for transparency, luma provides `255` brightness levels. When setting a pixel or drawing a texture, pixels with a luma `0` won't be written to the destination buffer.
+Because the value zero is reserved for transparency, luma provides `255` brightness levels. When setting a pixel or drawing a texture, pixels with a luma `0` won't be written to the back buffer.
 
 ---
 

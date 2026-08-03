@@ -14,7 +14,7 @@ def <identifier> <expression>
 ```
 
 **Usage examples:**
-```misa
+```
 def MY_NUMBER 42
 mov a0, MY_NUMBER
 ```
@@ -32,7 +32,7 @@ def .<identifier> <expression>
 ```
 
 **Usage examples:**
-```misa
+```
 # Implicitly qualified within the scope of a global label 'GAME_CONSTS'.
 # '.JUMP_HEIGHT' is the same as 'GAME_CONSTS.JUMP_HEIGHT'.
 def DEFAULT_HEIGHT .JUMP_HEIGHT
@@ -53,6 +53,6 @@ undef <identifier>
 ```
 
 **Usage examples:**
-```misa
+```
 undef MY_NUMBER
 ```

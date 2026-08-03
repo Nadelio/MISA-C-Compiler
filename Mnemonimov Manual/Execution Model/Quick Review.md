@@ -9,10 +9,11 @@ A process is an independent flow of execution created and managed by the kernel.
 **Built-In Process**
 Special processes automatically scheduled by the kernel:
 ```
-_start:   runs once when the VM starts.
-_update:  runs at a fixed rate of 60 Hz.
-_draw:    runs at a fixed rate of 60 Hz and updates the front buffer.
-_input:   runs whenever the player input state changes.
+_start:          runs once when the VM starts.
+_update:         runs at a fixed rate of 60 Hz.
+_draw:           runs at a fixed rate of 60 Hz and updates the front buffer.
+_input:          runs whenever the player input state changes.
+_terminal_input: runs when terminal input is available.
 ```
 
 **Entry Point**
