@@ -2,6 +2,12 @@ _start:
 	cal main_
 	exit
 
+sbmk "main_(): i32t"
+##
+## Parameters: NONE
+## Returns:
+## < a0 - return value, is i32t
+## Additional Implementation Notes:
 main_:
 	yield
 	mov t0, a0

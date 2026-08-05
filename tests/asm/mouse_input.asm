@@ -2,6 +2,12 @@ _start:
 	cal main_
 	exit
 
+sbmk "main_(): i32t"
+##
+## Parameters: NONE
+## Returns:
+## < a0 - return value, is i32t
+## Additional Implementation Notes:
 main_:
 	sub sp, 12
 	syscall SYS_GET_MOUSE_POSITION

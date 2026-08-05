@@ -2,6 +2,14 @@ _start:
 	cal main_
 	exit
 
+sbmk "draw_digit_(d: i32t, x: i32t, y: i32t): void"
+##
+## Parameters:
+## > a0 - d, is i32t
+## > a1 - x, is i32t
+## > a2 - y, is i32t
+## Returns: NONE
+## Additional Implementation Notes:
 draw_digit_:
 	sub sp, 24
 	mov ea, fp
@@ -107,6 +115,14 @@ __L2:
 	add sp, 24
 	ret
 
+sbmk "draw_number_(n: i32t, cx: i32t, top_y: i32t): void"
+##
+## Parameters:
+## > a0 - n, is i32t
+## > a1 - cx, is i32t
+## > a2 - top_y, is i32t
+## Returns: NONE
+## Additional Implementation Notes:
 draw_number_:
 	sub sp, 72
 	mov ea, fp
@@ -279,6 +295,11 @@ __L15:
 	add sp, 72
 	ret
 
+sbmk "draw_impl_(): void"
+##
+## Parameters: NONE
+## Returns: NONE
+## Additional Implementation Notes:
 draw_impl_:
 	sub sp, 16
 	syscall SYS_GET_MOUSE_POSITION
@@ -452,6 +473,11 @@ __L20:
 	add sp, 16
 	ret
 
+sbmk "mouse_btn_impl_(): void"
+##
+## Parameters: NONE
+## Returns: NONE
+## Additional Implementation Notes:
 mouse_btn_impl_:
 	sub sp, 12
 	syscall SYS_GET_MOUSE_BUTTON_INPUT
@@ -542,6 +568,12 @@ __L22:
 	add sp, 12
 	ret
 
+sbmk "main_(): i32t"
+##
+## Parameters: NONE
+## Returns:
+## < a0 - return value, is i32t
+## Additional Implementation Notes:
 main_:
 	mov t0, 0
 	mov a0, t0

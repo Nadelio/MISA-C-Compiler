@@ -2,6 +2,13 @@ _start:
 	cal main_
 	exit
 
+sbmk "fib_(n: i32t): i32t"
+##
+## Parameters:
+## > a0 - n, is i32t
+## Returns:
+## < a0 - return value, is i32t
+## Additional Implementation Notes:
 fib_:
 	sub sp, 4
 	mov ea, fp
@@ -45,6 +52,12 @@ __L1:
 	add sp, 4
 	ret
 
+sbmk "main_(): i32t"
+##
+## Parameters: NONE
+## Returns:
+## < a0 - return value, is i32t
+## Additional Implementation Notes:
 main_:
 	sub sp, 8
 	mov t1, 0

@@ -2,6 +2,12 @@ _start:
 	cal main_
 	exit
 
+sbmk "test_string_(s: i8t*): void"
+##
+## Parameters:
+## > a0 - s, is i8t*
+## Returns: NONE
+## Additional Implementation Notes:
 test_string_:
 	sub sp, 4
 	mov ea, fp
@@ -24,6 +30,12 @@ test_string_:
 	add sp, 4
 	ret
 
+sbmk "main_(): i32t"
+##
+## Parameters: NONE
+## Returns:
+## < a0 - return value, is i32t
+## Additional Implementation Notes:
 main_:
 	mov t1, 1
 	mov t2, 42

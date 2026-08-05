@@ -2,6 +2,12 @@ _start:
 	cal main_
 	exit
 
+sbmk "get_width_(): i8t"
+##
+## Parameters: NONE
+## Returns:
+## < a0 - return value, is i8t
+## Additional Implementation Notes:
 get_width_:
 	cal foo.somefunc
 	mov t0, a0
@@ -9,6 +15,12 @@ get_width_:
 	mov a0, t0
 	ret
 
+sbmk "main_(): i32t"
+##
+## Parameters: NONE
+## Returns:
+## < a0 - return value, is i32t
+## Additional Implementation Notes:
 main_:
 	lod u32t, t1, player.x
 	mov a0, t1
