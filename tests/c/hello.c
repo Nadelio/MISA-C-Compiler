@@ -1,4 +1,4 @@
-#include "printf.asm"
+#include "../../MISA Libraries/printf.asm"
 
 extern int printf(const char *fmt, ...);
 
