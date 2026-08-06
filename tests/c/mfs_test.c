@@ -1,5 +1,5 @@
-#include "../../MISA Libraries/MFS/include/mfs.h"
-#include "../../MISA Libraries/stdlib/include/stdio.h"
+#include <mfs/mfs.h>
+#include <stdio.h>
 
 char read_buf[128];
 

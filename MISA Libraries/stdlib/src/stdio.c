@@ -1,6 +1,6 @@
 #include "../include/stdio.h"
-#include "../../MFS/include/mfs.h"
-#include "../../../MISA Libraries/allocator.asm"
+#include "mfs/mfs.h"
+#include "../../allocator.asm"
 #include "printf.asm"
 #include "sprintf.asm"
 #include "sscanf.asm"
