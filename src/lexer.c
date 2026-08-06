@@ -680,8 +680,13 @@ static void handle_directive(Lexer *l) {
 			    && l->src[l->pos] != '\n' && pi < 511)
 				path[pi++] = l->src[l->pos++];
 			path[pi] = '\0';
-			if (l->pos < l->len && l->src[l->pos] == delim_close) l->pos++;
-			
+			if (l->pos < l->len && l->src[l->pos] == delim_close) {
+				l->pos++;
+			} else {
+				lexer_error(l, "missing closing delimiter in #include");
+				return;
+			}
+
 			int plen = pi;
 			if (plen >= 4 && !strcmp(path + plen - 4, ".asm")) {
 				
@@ -731,6 +736,22 @@ static void handle_directive(Lexer *l) {
 						if (dir_len + pi < 511) {
 							memcpy(resolved, l->filename, dir_len);
 							memcpy(resolved + dir_len, path, pi + 1);
+							probe = fopen(resolved, "r");
+						}
+					}
+				}
+				if (!probe && delim_open == '<') {
+#ifdef _WIN32
+					static const char *sys_dirs[] = { "C:/MinGW/include/", NULL };
+#else
+					static const char *sys_dirs[] = { "/usr/include/", NULL };
+#endif
+					int di;
+					for (di = 0; sys_dirs[di] && !probe; di++) {
+						int slen = (int)strlen(sys_dirs[di]);
+						if (slen + pi < 511) {
+							memcpy(resolved, sys_dirs[di], slen);
+							memcpy(resolved + slen, path, pi + 1);
 							probe = fopen(resolved, "r");
 						}
 					}
