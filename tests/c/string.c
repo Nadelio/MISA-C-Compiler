@@ -1,4 +1,4 @@
-#include "misa.h"
+#include <misa.h>
 
 int main(void) {
     char* test = "Hello, World!";

@@ -1,4 +1,4 @@
-#include "misa.h"
+#include <misa.h>
 
 int global_x = 100;
 char *greeting;
