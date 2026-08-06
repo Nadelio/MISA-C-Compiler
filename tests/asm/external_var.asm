@@ -1,25 +1,13 @@
+bmk "TOP"
 _start:
 	cal main_
 	exit
 
-sbmk "get_width_(): i8t"
+sbmk "main_(): i16t"
 ##
 ## Parameters: NONE
 ## Returns:
-## < a0 - return value, is i8t
-## Additional Implementation Notes:
-get_width_:
-	cal foo.somefunc
-	mov t0, a0
-	lod i8t, t0, CELL_WIDTH
-	mov a0, t0
-	ret
-
-sbmk "main_(): i32t"
-##
-## Parameters: NONE
-## Returns:
-## < a0 - return value, is i32t
+## < a0 - return value, is i16t
 ## Additional Implementation Notes:
 main_:
 	lod u32t, t1, player.x

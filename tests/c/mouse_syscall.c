@@ -1,4 +1,4 @@
-#include "misa.h"
+#include <misa.h>
 
 int main(void) {
     int x = syscall(SYS_GET_MOUSE_POSITION);

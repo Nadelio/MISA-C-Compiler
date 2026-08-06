@@ -79,6 +79,9 @@ typedef struct {
 	int  cond_stack[64];
 	int  cond_done[64];
 
+	/* User-supplied system include directory (overrides built-in paths) */
+	const char *sys_include_dir;
+
 	/* Error flag */
 	int         had_error;
 } Lexer;

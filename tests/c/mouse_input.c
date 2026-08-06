@@ -1,4 +1,4 @@
-#include "misa.h"
+#include <misa.h>
 
 int main(void) {
     int x = get_mouse_x();

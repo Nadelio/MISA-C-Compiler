@@ -111,4 +111,11 @@ Symbol *symtab_lookup_current(SymTab *st, const char *name);
 Symbol *symtab_lookup_tag(SymTab *st, const char *tag, SymKind kind);
 Symbol *symtab_define_tag(SymTab *st, const char *tag, SymKind kind, Type *type);
 
+/* Returns a heap-allocated assembly label for a function with the given name.
+   is_extern: non-zero if the function was declared extern. */
+char *func_label_for(const char *name, int is_extern);
+
+/* Returns non-zero if name is a kernel-managed entry point. */
+int symtab_is_kernel_entry(const char *name);
+
 #endif /* SYMTAB_H */

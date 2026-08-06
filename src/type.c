@@ -27,7 +27,7 @@ Type *type_make_short(int is_unsigned) {
 
 Type *type_make_int(int is_unsigned) {
 	Type *t = type_alloc(is_unsigned ? TY_UINT : TY_INT);
-	t->size = 4;
+	t->size = 2;
 	return t;
 }
 
@@ -174,7 +174,7 @@ int type_sizeof(const Type *t) {
 	case TY_VOID:    return 0;
 	case TY_CHAR: case TY_UCHAR: return 1;
 	case TY_SHORT: case TY_USHORT: return 2;
-	case TY_INT: case TY_UINT:
+	case TY_INT: case TY_UINT: return 2;
 	case TY_LONG: case TY_ULONG:
 	case TY_FLOAT: case TY_DOUBLE:
 	case TY_POINTER: case TY_FUNCTION: case TY_ENUM: return 4;
@@ -211,6 +211,7 @@ int type_alignof(const Type *t) {
 	switch (t->kind) {
 	case TY_CHAR: case TY_UCHAR: return 1;
 	case TY_SHORT: case TY_USHORT: return 2;
+	case TY_INT: case TY_UINT: return 2;
 	case TY_ARRAY: return t->base ? type_alignof(t->base) : 1;
 	case TY_STRUCT: case TY_UNION: {
 		TypeMember *m;
@@ -255,8 +256,10 @@ const char *type_misa_name(const Type *t) {
 	case TY_UCHAR:           return "u8t";
 	case TY_SHORT:           return "i16t";
 	case TY_USHORT:          return "u16t";
-	case TY_INT: case TY_LONG: case TY_ENUM: return "i32t";
-	case TY_UINT: case TY_ULONG: case TY_POINTER: return "u32t";
+	case TY_INT:  return "i16t";
+	case TY_UINT: return "u16t";
+	case TY_LONG: case TY_ENUM: return "i32t";
+	case TY_ULONG: case TY_POINTER: return "u32t";
 	case TY_FLOAT: case TY_DOUBLE: return "f32t";
 	default: return "u32t";
 	}

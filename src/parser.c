@@ -639,12 +639,7 @@ static AstNode *parse_decl(Parser *p, int allow_func_def) {
 				tp = tp->next;
 			}
 			Symbol *sym = symtab_define(p->symtab, name, SYM_FUNC, full);
-			if (is_extern || name[0] == '_') {
-				sym->func_label = strdup(name);
-			} else {
-				sym->func_label = (char *)malloc(strlen(name) + 2);
-				sprintf(sym->func_label, "%s_", name);
-			}
+			sym->func_label = func_label_for(name, is_extern);
 			symtab_push(p->symtab);
 			AstList *pl = n->u.func.params;
 			while (pl) {
@@ -693,12 +688,7 @@ static AstNode *parse_decl(Parser *p, int allow_func_def) {
 			n->u.func.is_static = is_static;
 			n->u.func.is_extern = is_extern;
 			Symbol *sym = symtab_define(p->symtab, name, SYM_FUNC, full);
-			if (is_extern || name[0] == '_') {
-				sym->func_label = strdup(name);
-			} else {
-				sym->func_label = (char *)malloc(strlen(name) + 2);
-				sprintf(sym->func_label, "%s_", name);
-			}
+			sym->func_label = func_label_for(name, is_extern);
 			if (!match(p, TOK_COMMA)) {
 				expect(p, TOK_SEMICOLON);
 				return n;
@@ -886,7 +876,9 @@ static AstNode *parse_unary(Parser *p) {
 		if (check2(p, TOK_KW_VOID) || check2(p, TOK_KW_CHAR) || check2(p, TOK_KW_INT) ||
 		    check2(p, TOK_KW_FLOAT) || check2(p, TOK_KW_DOUBLE) || check2(p, TOK_KW_LONG) ||
 		    check2(p, TOK_KW_SHORT) || check2(p, TOK_KW_UNSIGNED) || check2(p, TOK_KW_SIGNED) ||
-		    check2(p, TOK_KW_STRUCT) || check2(p, TOK_KW_UNION) || check2(p, TOK_KW_ENUM)) {
+		    check2(p, TOK_KW_STRUCT) || check2(p, TOK_KW_UNION) || check2(p, TOK_KW_ENUM) ||
+		    (p->peek.type == TOK_IDENT && symtab_lookup(p->symtab, p->peek.text) &&
+		     symtab_lookup(p->symtab, p->peek.text)->kind == SYM_TYPEDEF)) {
 			advance(p);
 			int dummy3;
 			Type *ct = parse_type_specifier(p, &dummy3);

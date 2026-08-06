@@ -23,18 +23,21 @@ static char *read_file(const char *path, int *out_len) {
 }
 
 static void usage(const char *prog) {
-	fprintf(stderr, "Usage: %s <input.c> [-o output.asm] [--doc|-gd]\n", prog);
+	fprintf(stderr, "Usage: %s <input.c> [-o output.asm] [--doc|-gd] [-isystem <dir>]\n", prog);
 }
 
 int main(int argc, char **argv) {
 	const char *input_path  = NULL;
 	const char *output_path = NULL;
+	const char *sys_inc_dir = NULL;
 	int gen_doc = 0;
 	int i;
 
 	for (i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "-o") && i + 1 < argc) {
 			output_path = argv[++i];
+		} else if (!strcmp(argv[i], "-isystem") && i + 1 < argc) {
+			sys_inc_dir = argv[++i];
 		} else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
 			usage(argv[0]);
 			return 0;
@@ -64,6 +67,7 @@ int main(int argc, char **argv) {
 
 	Lexer  lexer;
 	lexer_init(&lexer, src, src_len, input_path);
+	lexer.sys_include_dir = sys_inc_dir;
 
 	SymTab *symtab = symtab_new();
 

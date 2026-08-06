@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include "symtab.h"
 
 #define BUCKET_COUNT 64
@@ -30,6 +31,31 @@ static void scope_free(Scope *s) {
 		}
 	}
 	free(s);
+}
+
+static const char *const kernel_entry_names[] = {
+	"draw", "mouse_button_input", "update",
+	"input", "terminal_input", NULL
+};
+
+char *func_label_for(const char *name, int is_extern) {
+	if (is_extern || name[0] == '_') return strdup(name);
+	for (int i = 0; kernel_entry_names[i]; i++) {
+		if (strcmp(name, kernel_entry_names[i]) == 0) {
+			char *lbl = (char *)malloc(strlen(name) + 2);
+			sprintf(lbl, "_%s", name);
+			return lbl;
+		}
+	}
+	char *lbl = (char *)malloc(strlen(name) + 2);
+	sprintf(lbl, "%s_", name);
+	return lbl;
+}
+
+int symtab_is_kernel_entry(const char *name) {
+	for (int i = 0; kernel_entry_names[i]; i++)
+		if (strcmp(name, kernel_entry_names[i]) == 0) return 1;
+	return 0;
 }
 
 SymTab *symtab_new(void) {

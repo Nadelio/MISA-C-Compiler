@@ -1,30 +1,31 @@
+bmk "TOP"
 _start:
 	cal main_
 	exit
 
-sbmk "draw_digit_(d: i32t, x: i32t, y: i32t): void"
+sbmk "draw_digit_(d: i16t, x: i16t, y: i16t): void"
 ##
 ## Parameters:
-## > a0 - d, is i32t
-## > a1 - x, is i32t
-## > a2 - y, is i32t
+## > a0 - d, is i16t
+## > a1 - x, is i16t
+## > a2 - y, is i16t
 ## Returns: NONE
 ## Additional Implementation Notes:
 draw_digit_:
 	sub sp, 24
 	mov ea, fp
-	ste i32t, -4, a0
+	ste i16t, -4, a0
 	mov ea, fp
-	ste i32t, -8, a1
+	ste i16t, -8, a1
 	mov ea, fp
-	ste i32t, -12, a2
+	ste i16t, -12, a2
 	mov t1, 0
 	mov ea, fp
-	ste i32t, -16, t1
+	ste i16t, -16, t1
 	mov t0, t1
 __L0:
 	mov ea, fp
-	lde i32t, t1, -16
+	lde i16t, t1, -16
 	mov t2, 5
 	cmp lt, t1, t2
 	sel t0, 1, 0
@@ -32,51 +33,52 @@ __L0:
 	jfs __L2
 	tpa t1, g__font
 	mov ea, fp
-	lde i32t, t4, -4
+	lde i16t, t4, -4
 	mov t5, 5
 	mul t3, t4, t5
 	mov ea, fp
-	lde i32t, t4, -16
+	lde i16t, t4, -16
 	add t2, t3, t4
 	add t1, t2
 	mov ea, t1
 	lde u8t, t0, 0
+	sbx t0, t0, 0, 16
 	mov ea, fp
-	ste i32t, -24, t0
+	ste i16t, -24, t0
 	mov t1, 0
 	mov ea, fp
-	ste i32t, -20, t1
+	ste i16t, -20, t1
 	mov t0, t1
 __L3:
 	mov ea, fp
-	lde i32t, t1, -20
+	lde i16t, t1, -20
 	mov t2, 3
 	cmp lt, t1, t2
 	sel t0, 1, 0
 	cmp neq, t0, zr
 	jfs __L5
 	mov ea, fp
-	lde i32t, t1, -24
+	lde i16t, t1, -24
 	mov t3, 4
 	mov ea, fp
-	lde i32t, t4, -20
+	lde i16t, t4, -20
 	sar t2, t3, t4
 	and t0, t1, t2
 	cmp eq, t0, zr
 	jtr __L6
 	mov ea, fp
-	lde i32t, t2, -8
+	lde i16t, t2, -8
 	mov ea, fp
-	lde i32t, t4, -20
+	lde i16t, t4, -20
 	mov t6, 3
 	mov t7, 1
 	add t5, t6, t7
 	mul t3, t4, t5
 	add t1, t2, t3
 	mov ea, fp
-	lde i32t, t3, -12
+	lde i16t, t3, -12
 	mov ea, fp
-	lde i32t, t5, -16
+	lde i16t, t5, -16
 	mov t7, 3
 	mov t8, 1
 	add t6, t7, t8
@@ -96,73 +98,73 @@ __L6:
 __L7:
 __L4:
 	mov ea, fp
-	lde i32t, t1, -20
+	lde i16t, t1, -20
 	mov t0, t1
 	inc t1
 	mov ea, fp
-	ste i32t, -20, t1
+	ste i16t, -20, t1
 	jmp __L3
 __L5:
 __L1:
 	mov ea, fp
-	lde i32t, t1, -16
+	lde i16t, t1, -16
 	mov t0, t1
 	inc t1
 	mov ea, fp
-	ste i32t, -16, t1
+	ste i16t, -16, t1
 	jmp __L0
 __L2:
 	add sp, 24
 	ret
 
-sbmk "draw_number_(n: i32t, cx: i32t, top_y: i32t): void"
+sbmk "draw_number_(n: i16t, cx: i16t, top_y: i16t): void"
 ##
 ## Parameters:
-## > a0 - n, is i32t
-## > a1 - cx, is i32t
-## > a2 - top_y, is i32t
+## > a0 - n, is i16t
+## > a1 - cx, is i16t
+## > a2 - top_y, is i16t
 ## Returns: NONE
 ## Additional Implementation Notes:
 draw_number_:
-	sub sp, 72
+	sub sp, 56
 	mov ea, fp
-	ste i32t, -4, a0
+	ste i16t, -4, a0
 	mov ea, fp
-	ste i32t, -8, a1
+	ste i16t, -8, a1
 	mov ea, fp
-	ste i32t, -12, a2
+	ste i16t, -12, a2
 	mov t0, 0
 	mov ea, fp
-	ste i32t, -48, t0
+	ste i16t, -32, t0
 	mov ea, fp
-	lde i32t, t1, -4
+	lde i16t, t1, -4
 	mov t2, 0
 	cmp eq, t1, t2
 	sel t0, 1, 0
 	cmp eq, t0, zr
 	jtr __L8
 	mov t1, 0
-	add t2, fp, -44
+	add t2, fp, -28
 	mov t3, 0
-	mul t3, 4
+	mul t3, 2
 	add t2, t3
 	mov ea, t2
-	ste i32t, 0, t1
+	ste i16t, 0, t1
 	mov t0, t1
 	mov t1, 1
 	mov ea, fp
-	ste i32t, -48, t1
+	ste i16t, -32, t1
 	mov t0, t1
 	jmp __L9
 __L8:
 	mov ea, fp
-	lde i32t, t1, -4
+	lde i16t, t1, -4
 	mov ea, fp
-	ste i32t, -52, t1
+	ste i16t, -36, t1
 	mov t0, t1
 __L10:
 	mov ea, fp
-	lde i32t, t2, -52
+	lde i16t, t2, -36
 	mov t3, 0
 	cmp gt, t2, t3
 	sel t1, 1, 0
@@ -170,7 +172,7 @@ __L10:
 	cmp neq, t0, zr
 	jfs __L12
 	mov ea, fp
-	lde i32t, t2, -48
+	lde i16t, t2, -32
 	mov t3, 8
 	cmp lt, t2, t3
 	sel t1, 1, 0
@@ -180,29 +182,29 @@ __L12:
 	cmp neq, t0, zr
 	jfs __L11
 	mov ea, fp
-	lde i32t, t2, -52
+	lde i16t, t2, -36
 	mov t3, 10
 	rem t1, t2, t3
-	add t2, fp, -44
+	add t2, fp, -28
 	mov ea, fp
-	lde i32t, t3, -48
-	mul t3, 4
+	lde i16t, t3, -32
+	mul t3, 2
 	add t2, t3
 	mov ea, t2
-	ste i32t, 0, t1
+	ste i16t, 0, t1
 	mov t0, t1
 	mov ea, fp
-	lde i32t, t1, -48
+	lde i16t, t1, -32
 	mov t0, t1
 	inc t1
 	mov ea, fp
-	ste i32t, -48, t1
+	ste i16t, -32, t1
 	mov t1, 10
 	mov ea, fp
-	lde i32t, t2, -52
+	lde i16t, t2, -36
 	div t3, t2, t1
 	mov ea, fp
-	ste i32t, -52, t3
+	ste i16t, -36, t3
 	mov t0, t3
 	jmp __L10
 __L11:
@@ -213,71 +215,71 @@ __L9:
 	mov t2, 2
 	add t0, t1, t2
 	mov ea, fp
-	ste i32t, -56, t0
+	ste i16t, -40, t0
 	mov ea, fp
-	lde i32t, t1, -56
+	lde i16t, t1, -40
 	mov t2, 2
 	add t0, t1, t2
 	mov ea, fp
-	ste i32t, -60, t0
+	ste i16t, -44, t0
 	mov ea, fp
-	lde i32t, t3, -48
+	lde i16t, t3, -32
 	mov t4, 1
 	sub t2, t3, t4
 	mov ea, fp
-	lde i32t, t3, -60
+	lde i16t, t3, -44
 	mul t1, t2, t3
 	mov ea, fp
-	lde i32t, t2, -56
+	lde i16t, t2, -40
 	add t0, t1, t2
 	mov ea, fp
-	ste i32t, -64, t0
+	ste i16t, -48, t0
 	mov ea, fp
-	lde i32t, t1, -8
+	lde i16t, t1, -8
 	mov ea, fp
-	lde i32t, t3, -64
+	lde i16t, t3, -48
 	mov t4, 2
 	div t2, t3, t4
 	sub t0, t1, t2
 	mov ea, fp
-	ste i32t, -68, t0
+	ste i16t, -52, t0
 	mov ea, fp
-	lde i32t, t2, -48
+	lde i16t, t2, -32
 	mov t3, 1
 	sub t1, t2, t3
 	mov ea, fp
-	ste i32t, -72, t1
+	ste i16t, -56, t1
 	mov t0, t1
 __L13:
 	mov ea, fp
-	lde i32t, t1, -72
+	lde i16t, t1, -56
 	mov t2, 0
 	cmp gte, t1, t2
 	sel t0, 1, 0
 	cmp neq, t0, zr
 	jfs __L15
-	add t2, fp, -44
+	add t2, fp, -28
 	mov ea, fp
-	lde i32t, t3, -72
-	mul t3, 4
+	lde i16t, t3, -56
+	mul t3, 2
 	add t2, t3
 	mov ea, t2
-	lde i32t, t1, 0
+	lde i16t, t1, 0
 	mov ea, fp
-	lde i32t, t3, -68
+	lde i16t, t3, -52
 	mov ea, fp
-	lde i32t, t7, -48
+	lde i16t, t7, -32
 	mov t8, 1
 	sub t6, t7, t8
 	mov ea, fp
-	lde i32t, t7, -72
+	lde i16t, t7, -56
 	sub t5, t6, t7
 	mov ea, fp
-	lde i32t, t6, -60
+	lde i16t, t6, -44
 	mul t4, t5, t6
 	add t2, t3, t4
 	mov ea, fp
-	lde i32t, t3, -12
+	lde i16t, t3, -12
 	mov a2, t3
 	mov a1, t2
 	mov a0, t1
@@ -285,14 +287,14 @@ __L13:
 	mov t0, a0
 __L14:
 	mov ea, fp
-	lde i32t, t1, -72
+	lde i16t, t1, -56
 	mov t0, t1
 	dec t1
 	mov ea, fp
-	ste i32t, -72, t1
+	ste i16t, -56, t1
 	jmp __L13
 __L15:
-	add sp, 72
+	add sp, 56
 	ret
 
 sbmk "draw_impl_(): void"
@@ -305,13 +307,13 @@ draw_impl_:
 	syscall SYS_GET_MOUSE_POSITION
 	mov t0, a0
 	mov ea, fp
-	ste i32t, -4, t0
+	ste i16t, -4, t0
 	syscall SYS_GET_MOUSE_POSITION
 	mov t0, a1
 	mov ea, fp
-	ste i32t, -8, t0
+	ste i16t, -8, t0
 	mov ea, fp
-	lde i32t, t4, -4
+	lde i16t, t4, -4
 	mov t5, 100
 	cmp gte, t4, t5
 	sel t3, 1, 0
@@ -319,7 +321,7 @@ draw_impl_:
 	cmp neq, t2, zr
 	jfs __L18
 	mov ea, fp
-	lde i32t, t4, -4
+	lde i16t, t4, -4
 	mov t6, 100
 	mov t7, 120
 	add t5, t6, t7
@@ -332,7 +334,7 @@ __L18:
 	cmp neq, t1, zr
 	jfs __L17
 	mov ea, fp
-	lde i32t, t3, -8
+	lde i16t, t3, -8
 	mov t4, 90
 	cmp gte, t3, t4
 	sel t2, 1, 0
@@ -343,7 +345,7 @@ __L17:
 	cmp neq, t0, zr
 	jfs __L16
 	mov ea, fp
-	lde i32t, t2, -8
+	lde i16t, t2, -8
 	mov t4, 90
 	mov t5, 60
 	add t3, t4, t5
@@ -353,7 +355,7 @@ __L17:
 	sel t0, 1, 0
 __L16:
 	mov ea, fp
-	ste i32t, -12, t0
+	ste i16t, -12, t0
 	mov t1, 0
 	mov t2, 0
 	mov t3, 320
@@ -371,7 +373,7 @@ __L16:
 	mov t3, 120
 	mov t4, 60
 	mov ea, fp
-	lde i32t, t6, -12
+	lde i16t, t6, -12
 	cmp neq, t6, zr
 	jfs __L19
 	mov t6, 120
@@ -450,8 +452,8 @@ __L20:
 	mov t2, 4
 	add t0, t1, t2
 	mov ea, fp
-	ste i32t, -16, t0
-	lod i32t, t1, g__counter
+	ste i16t, -16, t0
+	lod i16t, t1, g__counter
 	mov t3, 100
 	mov t5, 120
 	mov t6, 2
@@ -460,7 +462,7 @@ __L20:
 	mov t4, 90
 	mov t7, 60
 	mov ea, fp
-	lde i32t, t8, -16
+	lde i16t, t8, -16
 	sub t6, t7, t8
 	mov t7, 2
 	div t5, t6, t7
@@ -483,23 +485,23 @@ mouse_btn_impl_:
 	syscall SYS_GET_MOUSE_BUTTON_INPUT
 	mov t0, a0
 	mov ea, fp
-	ste i32t, -4, t0
+	ste i16t, -4, t0
 	syscall SYS_GET_MOUSE_POSITION
 	mov t0, a0
 	mov ea, fp
-	ste i32t, -8, t0
+	ste i16t, -8, t0
 	syscall SYS_GET_MOUSE_POSITION
 	mov t0, a1
 	mov ea, fp
-	ste i32t, -12, t0
+	ste i16t, -12, t0
 	mov ea, fp
-	lde i32t, t2, -4
+	lde i16t, t2, -4
 	mov t3, 1
 	and t1, t2, t3
 	mov t0, t1
 	cmp neq, t0, zr
 	jfs __L23
-	lod i32t, t3, g__prev_btn
+	lod i16t, t3, g__prev_btn
 	mov t4, 1
 	and t2, t3, t4
 	cmp eq, t2, zr
@@ -510,7 +512,7 @@ __L23:
 	cmp eq, t0, zr
 	jtr __L21
 	mov ea, fp
-	lde i32t, t4, -8
+	lde i16t, t4, -8
 	mov t5, 100
 	cmp gte, t4, t5
 	sel t3, 1, 0
@@ -518,7 +520,7 @@ __L23:
 	cmp neq, t2, zr
 	jfs __L28
 	mov ea, fp
-	lde i32t, t4, -8
+	lde i16t, t4, -8
 	mov t6, 100
 	mov t7, 120
 	add t5, t6, t7
@@ -531,7 +533,7 @@ __L28:
 	cmp neq, t1, zr
 	jfs __L27
 	mov ea, fp
-	lde i32t, t3, -12
+	lde i16t, t3, -12
 	mov t4, 90
 	cmp gte, t3, t4
 	sel t2, 1, 0
@@ -542,7 +544,7 @@ __L27:
 	cmp neq, t0, zr
 	jfs __L26
 	mov ea, fp
-	lde i32t, t2, -12
+	lde i16t, t2, -12
 	mov t4, 90
 	mov t5, 60
 	add t3, t4, t5
@@ -553,40 +555,56 @@ __L27:
 __L26:
 	cmp eq, t0, zr
 	jtr __L24
-	lod i32t, t1, g__counter
+	lod i16t, t1, g__counter
 	mov t0, t1
 	inc t1
-	str i32t, g__counter, t1
+	str i16t, g__counter, t1
 __L24:
 __L25:
 __L21:
 __L22:
 	mov ea, fp
-	lde i32t, t1, -4
-	str i32t, g__prev_btn, t1
+	lde i16t, t1, -4
+	str i16t, g__prev_btn, t1
 	mov t0, t1
 	add sp, 12
 	ret
 
-sbmk "main_(): i32t"
+sbmk "_draw(): void"
+##
+## Parameters: NONE
+## Returns: NONE
+## Additional Implementation Notes:
+_draw:
+	cal draw_impl_
+	mov t0, a0
+	exit
+	mov t0, a0
+	ret
+
+sbmk "_mouse_button_input(): void"
+##
+## Parameters: NONE
+## Returns: NONE
+## Additional Implementation Notes:
+_mouse_button_input:
+	cal mouse_btn_impl_
+	mov t0, a0
+	exit
+	mov t0, a0
+	ret
+
+sbmk "main_(): i16t"
 ##
 ## Parameters: NONE
 ## Returns:
-## < a0 - return value, is i32t
+## < a0 - return value, is i16t
 ## Additional Implementation Notes:
 main_:
 	mov t0, 0
 	mov a0, t0
 	ret
 
-g__counter:	emb i32t 0
-g__prev_btn:	emb i32t 0
+g__counter:	emb i16t 0
+g__prev_btn:	emb i16t 0
 g__font:	emb u8t 7, 5, 5, 5, 7, 2, 6, 2, 2, 7, 7, 1, 7, 4, 7, 7, 1, 7, 1, 7, 5, 5, 7, 1, 1, 7, 4, 7, 1, 7, 7, 4, 7, 5, 7, 7, 1, 1, 1, 1, 7, 5, 7, 5, 7, 7, 5, 7, 1, 7
-
-_draw:
-	cal draw_impl_
-	exit
-
-_mouse_button_input:
-	cal mouse_btn_impl_
-	exit

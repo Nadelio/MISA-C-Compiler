@@ -1,4 +1,4 @@
-#include "misa.h"
+#include <misa.h>
 
 void test_string(char *s) {
     syscall(SYS_PRINT_LINE_STRING, to_pa(s));
