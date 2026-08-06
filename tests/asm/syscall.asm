@@ -2,6 +2,11 @@ _start:
 	cal main_
 	exit
 
+sbmk "test_(): void"
+##
+## Parameters: NONE
+## Returns: NONE
+## Additional Implementation Notes:
 test_:
 	sub sp, 4
 	mov t1, 0
@@ -39,6 +44,12 @@ test_:
 	add sp, 4
 	ret
 
+sbmk "main_(): i32t"
+##
+## Parameters: NONE
+## Returns:
+## < a0 - return value, is i32t
+## Additional Implementation Notes:
 main_:
 	cal test_
 	mov t0, a0

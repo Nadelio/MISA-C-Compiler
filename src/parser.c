@@ -56,6 +56,7 @@ static void expect(Parser *p, TokenType t) {
 		char buf[128];
 		sprintf(buf, "expected '%s'", tok_type_name(t));
 		parser_error(p, buf);
+		advance(p);
 	}
 }
 

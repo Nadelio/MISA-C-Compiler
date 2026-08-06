@@ -2,6 +2,14 @@ _start:
 	cal main_
 	exit
 
+sbmk "add_(a: i32t, b: i32t): i32t"
+##
+## Parameters:
+## > a0 - a, is i32t
+## > a1 - b, is i32t
+## Returns:
+## < a0 - return value, is i32t
+## Additional Implementation Notes:
 add_:
 	sub sp, 8
 	mov ea, fp
@@ -17,6 +25,12 @@ add_:
 	add sp, 8
 	ret
 
+sbmk "main_(): i32t"
+##
+## Parameters: NONE
+## Returns:
+## < a0 - return value, is i32t
+## Additional Implementation Notes:
 main_:
 	sub sp, 12
 	mov t1, 10
