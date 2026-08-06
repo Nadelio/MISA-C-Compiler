@@ -15,11 +15,11 @@ get_width_:
 	mov a0, t0
 	ret
 
-sbmk "main_(): i32t"
+sbmk "main_(): i16t"
 ##
 ## Parameters: NONE
 ## Returns:
-## < a0 - return value, is i32t
+## < a0 - return value, is i16t
 ## Additional Implementation Notes:
 main_:
 	lod u32t, t1, player.x

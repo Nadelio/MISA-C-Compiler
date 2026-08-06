@@ -6,6 +6,58 @@
 
 #define MACRO_INIT_CAP 16
 
+/*
+ * Normalise a relative path in-place: resolve . and .. components and
+ * convert backslashes to forward slashes.  The result is a canonical
+ * representation so that two different textual paths to the same file
+ * compare equal (important for the seen_includes deduplication check).
+ */
+static void normalize_path(char *path) {
+	int i;
+	char out[512];
+	int  out_len = 0;
+	char *p;
+
+	/* Unify separators */
+	for (i = 0; path[i]; i++)
+		if (path[i] == '\\') path[i] = '/';
+
+	p = path;
+	/* Preserve a leading drive letter (Windows: "C:/...") */
+	if (p[0] && p[1] == ':') {
+		if (out_len + 2 < 511) { out[out_len++] = p[0]; out[out_len++] = ':'; }
+		p += 2;
+	}
+	/* Preserve a leading slash for absolute paths */
+	if (*p == '/') { if (out_len < 511) out[out_len++] = '/'; p++; }
+
+	while (*p) {
+		char *end = p;
+		while (*end && *end != '/') end++;
+		int clen = (int)(end - p);
+
+		if (clen == 0 || (clen == 1 && p[0] == '.')) {
+			/* empty segment or "." — skip */
+		} else if (clen == 2 && p[0] == '.' && p[1] == '.') {
+			/* ".." — remove the last path component from out */
+			if (out_len > 0 && out[out_len - 1] == '/') out_len--;
+			while (out_len > 0 && out[out_len - 1] != '/') out_len--;
+		} else {
+			if (out_len > 0 && out[out_len - 1] != '/') {
+				if (out_len < 511) out[out_len++] = '/';
+			}
+			if (out_len + clen < 511) {
+				memcpy(out + out_len, p, clen);
+				out_len += clen;
+			}
+		}
+		p = end;
+		if (*p == '/') p++;
+	}
+	out[out_len] = '\0';
+	strcpy(path, out);
+}
+
 static int is_ident_start(char c) {
 	return isalpha((unsigned char)c) || c == '_';
 }
@@ -323,6 +375,78 @@ static struct MacroDef *lookup_macro_def(Lexer *l, const char *name) {
 static const char *lookup_macro(Lexer *l, const char *name) {
 	struct MacroDef *m = lookup_macro_def(l, name);
 	return m ? m->body : NULL;
+}
+
+/* Forward declaration for mutual recursion. */
+static void collect_asm_deps(Lexer *l, const char *asm_path);
+
+/*
+ * Add path to asm_includes, deduplicating and then recursively collecting
+ * any asm-includes found inside that asm file.
+ */
+static void add_asm_include(Lexer *l, const char *path) {
+	int i;
+	for (i = 0; i < l->asm_include_count; i++)
+		if (!strcmp(l->asm_includes[i], path)) return;
+	if (l->asm_include_count >= l->asm_include_cap) {
+		l->asm_include_cap = l->asm_include_cap ? l->asm_include_cap * 2 : 4;
+		l->asm_includes = (char **)realloc(l->asm_includes,
+		    l->asm_include_cap * sizeof(char *));
+	}
+	l->asm_includes[l->asm_include_count++] = strdup(path);
+	collect_asm_deps(l, path);
+}
+
+/*
+ * Scan an asm file for "#include" lines that reference other asm files and
+ * add them (and their transitive dependencies) to l->asm_includes.
+ */
+static void collect_asm_deps(Lexer *l, const char *asm_path) {
+	FILE *f = fopen(asm_path, "r");
+	if (!f) return;
+	char line[1024];
+	while (fgets(line, sizeof(line), f)) {
+		const char *p = line;
+		while (*p == ' ' || *p == '\t') p++;
+		if (*p != '#') continue;
+		p++;
+		while (*p == ' ' || *p == '\t') p++;
+		if (strncmp(p, "include", 7) != 0) continue;
+		p += 7;
+		while (*p == ' ' || *p == '\t') p++;
+		char delim_open = *p;
+		char delim_close = (delim_open == '"') ? '"' : '>';
+		if (delim_open != '"' && delim_open != '<') continue;
+		p++;
+		char inc_path[512]; int pi = 0;
+		while (*p && *p != delim_close && *p != '\n' && pi < 511)
+			inc_path[pi++] = *p++;
+		inc_path[pi] = '\0';
+		if (pi < 4 || strcmp(inc_path + pi - 4, ".asm") != 0) continue;
+
+		/* resolve relative to the including asm file's directory */
+		char resolved[512];
+		FILE *probe = fopen(inc_path, "r");
+		if (!probe) {
+			const char *last_sep = NULL;
+			const char *pp = asm_path;
+			while (*pp) { if (*pp == '/' || *pp == '\\') last_sep = pp; pp++; }
+			if (last_sep) {
+				int dir_len = (int)(last_sep - asm_path) + 1;
+				if (dir_len + pi < 511) {
+					memcpy(resolved, asm_path, dir_len);
+					memcpy(resolved + dir_len, inc_path, pi + 1);
+					probe = fopen(resolved, "r");
+					if (probe) { fclose(probe); strcpy(inc_path, resolved); }
+				}
+			}
+		} else {
+			fclose(probe);
+		}
+		if (probe == NULL) continue; /* unresolvable — skip silently */
+		add_asm_include(l, inc_path);
+	}
+	fclose(f);
 }
 
 static void push_expansion(Lexer *l, char *heap_body, int *expanding_flag) {
@@ -691,6 +815,7 @@ static void handle_directive(Lexer *l) {
 			if (plen >= 4 && !strcmp(path + plen - 4, ".asm")) {
 				
 				char resolved[512];
+				const char *stored_path = path;
 				FILE *probe = fopen(path, "r");
 				if (!probe && l->filename) {
 					
@@ -706,19 +831,22 @@ static void handle_directive(Lexer *l) {
 							memcpy(resolved, l->filename, dir_len);
 							memcpy(resolved + dir_len, path, pi + 1);
 							probe = fopen(resolved, "r");
-							if (probe) { fclose(probe); strcpy(path, resolved); }
+							if (probe) { fclose(probe); stored_path = resolved; }
 						}
 					}
-				} else {
+				} else if (probe) {
 					fclose(probe);
 				}
-				
-				if (l->asm_include_count >= l->asm_include_cap) {
-					l->asm_include_cap = l->asm_include_cap ? l->asm_include_cap * 2 : 4;
-					l->asm_includes = (char **)realloc(l->asm_includes,
-					    l->asm_include_cap * sizeof(char *));
+				if (!probe) {
+					fprintf(stderr, "%s:%d: warning: cannot open asm include '%s'\n",
+					    l->filename ? l->filename : "<input>", l->line, path);
+				} else {
+					char normalized_asm[512];
+					strncpy(normalized_asm, stored_path, 511);
+					normalized_asm[511] = '\0';
+					normalize_path(normalized_asm);
+					add_asm_include(l, normalized_asm);
 				}
-				l->asm_includes[l->asm_include_count++] = strdup(path);
 			} else {
 				
 				char resolved[512];
@@ -761,6 +889,9 @@ static void handle_directive(Lexer *l) {
 						}
 					}
 				}
+				/* Canonicalise before the dedup check so that two different
+				   textual paths to the same file compare equal. */
+				normalize_path(resolved);
 				if (!probe) {
 					fprintf(stderr, "%s:%d: warning: cannot open include '%s'\n",
 					    l->filename, l->line, path);

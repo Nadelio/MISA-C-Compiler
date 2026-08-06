@@ -1,4 +1,4 @@
-#include "stdlib.h"
+#include "types.h"
 
 i16t isalnum(i16t c);
 i16t isalpha(i16t c);

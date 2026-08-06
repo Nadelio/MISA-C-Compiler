@@ -40,15 +40,15 @@ test_:
 	syscall SYS_GET_INPUT
 	mov t0, a0
 	mov ea, fp
-	ste i32t, -4, t0
+	ste i16t, -4, t0
 	add sp, 4
 	ret
 
-sbmk "main_(): i32t"
+sbmk "main_(): i16t"
 ##
 ## Parameters: NONE
 ## Returns:
-## < a0 - return value, is i32t
+## < a0 - return value, is i16t
 ## Additional Implementation Notes:
 main_:
 	cal test_

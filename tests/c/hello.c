@@ -1,6 +1,4 @@
-#include "../../MISA Libraries/printf.asm"
-
-extern int printf(const char *fmt, ...);
+#include "../../MISA Libraries/stdlib/include/stdio.h"
 
 void main(void) {
     printf("%s\n", "Hello, World!");

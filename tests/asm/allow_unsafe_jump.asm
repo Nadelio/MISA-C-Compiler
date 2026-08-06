@@ -2,11 +2,11 @@ _start:
 	cal main_
 	exit
 
-sbmk "main_(): i32t"
+sbmk "main_(): i16t"
 ##
 ## Parameters: NONE
 ## Returns:
-## < a0 - return value, is i32t
+## < a0 - return value, is i16t
 ## Additional Implementation Notes:
 main_:
 	mov t1, 23

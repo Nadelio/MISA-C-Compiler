@@ -1,4 +1,4 @@
-#include "../../MISA Libraries/MFS/mfs.asm"
+#include "../src/mfs.asm"
 
 extern void     MFS.format();
 extern int      MFS.load();

@@ -14,13 +14,13 @@ foo_:
 	tpr a0
 	syscall SYS_PRINT_STRING
 	mov t0, a0
-	lod i32t, t1, g__x
+	lod i16t, t1, g__x
 	mov t0, t1
 	inc t1
-	str i32t, g__x, t1
+	str i16t, g__x, t1
 	ret
 
-sbmk "beep_(a: i32t): i32t"
+sbmk "beep_(a: i16t): i16t"
 ## prints the given number `a`
 ## Parameters:
 ## > a0 - some number
@@ -31,39 +31,39 @@ sbmk "beep_(a: i32t): i32t"
 beep_:
 	sub sp, 4
 	mov ea, fp
-	ste i32t, -4, a0
+	ste i16t, -4, a0
 	mov ea, fp
-	lde i32t, t1, -4
+	lde i16t, t1, -4
 	mov a0, t1
 	syscall SYS_PRINT_INT
 	mov t0, a0
-	lod i32t, t1, g__x
+	lod i16t, t1, g__x
 	mov t0, t1
 	inc t1
-	str i32t, g__x, t1
-	lod i32t, t1, g__x
+	str i16t, g__x, t1
+	lod i16t, t1, g__x
 	mov ea, fp
-	lde i32t, t2, -4
+	lde i16t, t2, -4
 	add t0, t1, t2
 	mov a0, t0
 	add sp, 4
 	ret
 
-sbmk "multiple_params_(a: i32t, message: i8t*): void"
+sbmk "multiple_params_(a: i16t, message: i8t*): void"
 ## prints `a` first, then `message`
 ## Parameters:
-## > a0 - a, is i32t
+## > a0 - a, is i16t
 ## > a1 - message, is i8t*
 ## Returns: NONE
 ## Additional Implementation Notes:
 multiple_params_:
 	sub sp, 8
 	mov ea, fp
-	ste i32t, -4, a0
+	ste i16t, -4, a0
 	mov ea, fp
 	ste u32t, -8, a1
 	mov ea, fp
-	lde i32t, t1, -4
+	lde i16t, t1, -4
 	mov a0, t1
 	syscall SYS_PRINT_INT
 	mov t0, a0
@@ -76,5 +76,5 @@ multiple_params_:
 	add sp, 8
 	ret
 
-g__x:	emb i32t 0
+g__x:	emb i16t 0
 __str_0:	emb string "foo"

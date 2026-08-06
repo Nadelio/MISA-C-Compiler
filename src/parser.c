@@ -886,7 +886,9 @@ static AstNode *parse_unary(Parser *p) {
 		if (check2(p, TOK_KW_VOID) || check2(p, TOK_KW_CHAR) || check2(p, TOK_KW_INT) ||
 		    check2(p, TOK_KW_FLOAT) || check2(p, TOK_KW_DOUBLE) || check2(p, TOK_KW_LONG) ||
 		    check2(p, TOK_KW_SHORT) || check2(p, TOK_KW_UNSIGNED) || check2(p, TOK_KW_SIGNED) ||
-		    check2(p, TOK_KW_STRUCT) || check2(p, TOK_KW_UNION) || check2(p, TOK_KW_ENUM)) {
+		    check2(p, TOK_KW_STRUCT) || check2(p, TOK_KW_UNION) || check2(p, TOK_KW_ENUM) ||
+		    (p->peek.type == TOK_IDENT && symtab_lookup(p->symtab, p->peek.text) &&
+		     symtab_lookup(p->symtab, p->peek.text)->kind == SYM_TYPEDEF)) {
 			advance(p);
 			int dummy3;
 			Type *ct = parse_type_specifier(p, &dummy3);

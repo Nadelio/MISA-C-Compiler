@@ -1,7 +1,5 @@
-#include "mfs.h"
-#include "../../MISA Libraries/printf.asm"
-
-extern int printf(const char *fmt, ...);
+#include "../../MISA Libraries/MFS/include/mfs.h"
+#include "../../MISA Libraries/stdlib/include/stdio.h"
 
 char read_buf[128];
 
