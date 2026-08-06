@@ -1,3 +1,4 @@
+bmk "TOP"
 _start:
 	cal main_
 	exit
@@ -569,6 +570,30 @@ __L22:
 	add sp, 12
 	ret
 
+sbmk "_draw(): void"
+##
+## Parameters: NONE
+## Returns: NONE
+## Additional Implementation Notes:
+_draw:
+	cal draw_impl_
+	mov t0, a0
+	exit
+	mov t0, a0
+	ret
+
+sbmk "_mouse_button_input(): void"
+##
+## Parameters: NONE
+## Returns: NONE
+## Additional Implementation Notes:
+_mouse_button_input:
+	cal mouse_btn_impl_
+	mov t0, a0
+	exit
+	mov t0, a0
+	ret
+
 sbmk "main_(): i16t"
 ##
 ## Parameters: NONE
@@ -583,11 +608,3 @@ main_:
 g__counter:	emb i16t 0
 g__prev_btn:	emb i16t 0
 g__font:	emb u8t 7, 5, 5, 5, 7, 2, 6, 2, 2, 7, 7, 1, 7, 4, 7, 7, 1, 7, 1, 7, 5, 5, 7, 1, 1, 7, 4, 7, 1, 7, 7, 4, 7, 5, 7, 7, 1, 1, 1, 1, 7, 5, 7, 5, 7, 7, 5, 7, 1, 7
-
-_draw:
-	cal draw_impl_
-	exit
-
-_mouse_button_input:
-	cal mouse_btn_impl_
-	exit

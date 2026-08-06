@@ -1,5 +1,4 @@
 #include "misa.h"
-#include "gui_entry.asm"
 
 #define BTN_X  100
 #define BTN_Y   90
@@ -102,7 +101,16 @@ void mouse_btn_impl(void) {
     prev_btn = btn;
 }
 
+void draw(void) {
+    draw_impl();
+    exit();
+}
+
+void mouse_button_input(void) {
+    mouse_btn_impl();
+    exit();
+}
+
 int main(void) {
     return 0;
 }
-

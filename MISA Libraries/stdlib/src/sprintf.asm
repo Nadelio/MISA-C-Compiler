@@ -31,7 +31,7 @@ _sprintf_putc:
 
 # Write null-terminated C string from absolute address a0
 _sprintf_puts:
-    vpsh s0
+    psh s0
     mov s0, a0
     @loop:
         mov ea, s0
@@ -42,7 +42,7 @@ _sprintf_puts:
         inc s0
         jmp @loop-
     @done:
-    vpop s0
+    pop s0
     ret
 
 # Write signed integer a0

@@ -1757,6 +1757,133 @@ static void cg_global_var(CodeGen *cg, AstNode *n) {
 	}
 }
 
+/* ------------------------------------------------------------------ */
+/* Dead-code elimination: unused C function culling                   */
+/* ------------------------------------------------------------------ */
+
+typedef struct { char **elems; int count, cap; } StrSet;
+
+static void ss_init(StrSet *s) { s->elems = NULL; s->count = s->cap = 0; }
+static int  ss_has(const StrSet *s, const char *n) {
+	int i; for (i = 0; i < s->count; i++) if (!strcmp(s->elems[i], n)) return 1; return 0;
+}
+static void ss_add(StrSet *s, const char *n) {
+	if (ss_has(s, n)) return;
+	if (s->count >= s->cap) {
+		s->cap = s->cap ? s->cap * 2 : 16;
+		s->elems = (char **)realloc(s->elems, s->cap * sizeof(char *));
+	}
+	s->elems[s->count++] = strdup(n);
+}
+static void ss_free(StrSet *s) {
+	int i; for (i = 0; i < s->count; i++) free(s->elems[i]);
+	free(s->elems); ss_init(s);
+}
+
+/* Collect every called / address-taken function name from an AST subtree. */
+static void dce_refs(AstNode *n, StrSet *out) {
+	if (!n) return;
+	switch (n->kind) {
+	case AST_CALL:
+		/* Direct call: record the callee name without recursing into it. */
+		if (n->u.call.callee && n->u.call.callee->kind == AST_IDENT)
+			ss_add(out, n->u.call.callee->u.ident.name);
+		else
+			dce_refs(n->u.call.callee, out);
+		{ AstList *a = n->u.call.args; while (a) { dce_refs(a->node, out); a = a->next; } }
+		break;
+	case AST_IDENT:
+		/* Conservative: any identifier may be a function used as a value. */
+		ss_add(out, n->u.ident.name);
+		break;
+	case AST_VAR_DECL:    dce_refs(n->u.var.init, out); break;
+	case AST_BLOCK:       { AstList *it = n->u.block.items;  while (it) { dce_refs(it->node, out); it = it->next; } } break;
+	case AST_EXPR_STMT:   dce_refs(n->u.expr_stmt.expr, out); break;
+	case AST_IF:          dce_refs(n->u.if_stmt.cond, out); dce_refs(n->u.if_stmt.then_stmt, out); dce_refs(n->u.if_stmt.else_stmt, out); break;
+	case AST_WHILE:
+	case AST_DO_WHILE:    dce_refs(n->u.while_stmt.cond, out); dce_refs(n->u.while_stmt.body, out); break;
+	case AST_FOR:         dce_refs(n->u.for_stmt.init, out); dce_refs(n->u.for_stmt.cond, out); dce_refs(n->u.for_stmt.incr, out); dce_refs(n->u.for_stmt.body, out); break;
+	case AST_SWITCH:      dce_refs(n->u.switch_stmt.expr, out); dce_refs(n->u.switch_stmt.body, out); break;
+	case AST_CASE:        dce_refs(n->u.case_stmt.expr, out); dce_refs(n->u.case_stmt.stmt, out); break;
+	case AST_DEFAULT:     dce_refs(n->u.default_stmt.stmt, out); break;
+	case AST_RETURN:      dce_refs(n->u.ret_stmt.expr, out); break;
+	case AST_LABEL_STMT:  dce_refs(n->u.label_stmt.stmt, out); break;
+	case AST_ASSIGN:      dce_refs(n->u.assign.lhs, out); dce_refs(n->u.assign.rhs, out); break;
+	case AST_BINARY:
+	case AST_COMMA_EXPR:  dce_refs(n->u.binary.left, out); dce_refs(n->u.binary.right, out); break;
+	case AST_TERNARY:     dce_refs(n->u.ternary.cond, out); dce_refs(n->u.ternary.then_expr, out); dce_refs(n->u.ternary.else_expr, out); break;
+	case AST_CAST:        dce_refs(n->u.cast.expr, out); break;
+	case AST_UNARY_PRE:
+	case AST_UNARY_POST:  dce_refs(n->u.unary.operand, out); break;
+	case AST_SIZEOF_EXPR: dce_refs(n->u.sizeof_expr.sizeof_expr, out); break;
+	case AST_SUBSCRIPT:   dce_refs(n->u.subscript.base, out); dce_refs(n->u.subscript.index, out); break;
+	case AST_MEMBER:
+	case AST_PTR_MEMBER:  dce_refs(n->u.member.object, out); break;
+	case AST_INIT_LIST:   { AstList *it = n->u.init_list.items; while (it) { dce_refs(it->node, out); it = it->next; } } break;
+	default: break;
+	}
+}
+
+/*
+ * Compute the set of live C function names reachable from "main".
+ *
+ * Works by BFS: the live set doubles as the work queue (processed up to
+ * qhead).  Because ss_add is idempotent, re-discovering a name is a no-op.
+ * Multiple transitive hops are handled automatically since every newly
+ * added name will be processed when qhead reaches it.
+ */
+static StrSet dce_live(AstList *decls) {
+	typedef struct { const char *name; StrSet refs; } FE;
+	FE *fe = NULL; int nfe = 0, fecap = 0;
+
+	AstList *it = decls;
+	while (it) {
+		AstNode *n = it->node;
+		if (n && n->kind == AST_FUNC_DEF && n->u.func.name) {
+			if (nfe >= fecap) {
+				fecap = fecap ? fecap * 2 : 16;
+				fe = (FE *)realloc(fe, fecap * sizeof(FE));
+			}
+			fe[nfe].name = n->u.func.name;
+			ss_init(&fe[nfe].refs);
+			dce_refs(n->u.func.body, &fe[nfe].refs);
+			nfe++;
+		}
+		it = it->next;
+	}
+
+	StrSet live; ss_init(&live);
+	ss_add(&live, "main");
+	{
+		AstList *fi = decls;
+		while (fi) {
+			AstNode *fn = fi->node;
+			if (fn && fn->kind == AST_FUNC_DEF && fn->u.func.name
+			    && symtab_is_kernel_entry(fn->u.func.name))
+				ss_add(&live, fn->u.func.name);
+			fi = fi->next;
+		}
+	}
+
+	int qhead = 0;
+	while (qhead < live.count) {
+		const char *cur = live.elems[qhead++];
+		int i;
+		for (i = 0; i < nfe; i++) {
+			if (!strcmp(fe[i].name, cur)) {
+				int j;
+				for (j = 0; j < fe[i].refs.count; j++)
+					ss_add(&live, fe[i].refs.elems[j]);
+				break;
+			}
+		}
+	}
+
+	int i; for (i = 0; i < nfe; i++) ss_free(&fe[i].refs);
+	free(fe);
+	return live;
+}
+
 void codegen_init(CodeGen *cg, FILE *out, SymTab *st) {
 	memset(cg, 0, sizeof(*cg));
 	cg->out    = out;
@@ -1814,22 +1941,14 @@ void codegen_emit(CodeGen *cg, AstNode *unit) {
 					sym = symtab_define(cg->symtab, n->u.func.name, SYM_FUNC,
 					    n->u.func.func_type);
 				}
-				if (!sym->func_label) {
-					const char *fn = n->u.func.name;
-					if (n->u.func.is_extern || fn[0] == '_') {
-						sym->func_label = strdup(fn);
-					} else {
-						char *lbl = (char *)malloc(strlen(fn) + 2);
-						sprintf(lbl, "%s_", fn);
-						sym->func_label = lbl;
-					}
-				}
+				if (!sym->func_label)
+					sym->func_label = func_label_for(n->u.func.name, n->u.func.is_extern);
 			}
 		}
 		it = it->next;
 	}
 
-	
+	fprintf(cg->out, "bmk \"TOP\"\n");
 	fprintf(cg->out, "_start:\n");
 	{
 		Symbol *msym = symtab_lookup(cg->symtab, "main");
@@ -1838,15 +1957,19 @@ void codegen_emit(CodeGen *cg, AstNode *unit) {
 	}
 	fprintf(cg->out, "\texit\n");
 
+	StrSet live = dce_live(unit->u.unit.decls);
+
 	
 	it = unit->u.unit.decls;
 	while (it) {
 		AstNode *n = it->node;
-		if (n && n->kind == AST_FUNC_DEF) {
+		if (n && n->kind == AST_FUNC_DEF && ss_has(&live, n->u.func.name)) {
 			cg_func(cg, n);
 		}
 		it = it->next;
 	}
+
+	ss_free(&live);
 
 	
 	fprintf(cg->out, "\n");

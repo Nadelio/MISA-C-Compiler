@@ -50,7 +50,8 @@ _sscanf_loop:
             cmp eq, t1, 13
             jtr @ws_adv+
             jmp @ws_done+
-            @ws_adv: inc s0
+            @ws_adv:
+                inc s0
             jmp @ws_lp-
         @ws_done:
         inc s1
@@ -90,7 +91,8 @@ _sscanf_loop:
             cmp eq, t0, 13
             jtr @wd_adv+
             jmp @wd_done+
-            @wd_adv: inc s0
+            @wd_adv:
+                inc s0
             jmp @wd-
         @wd_done:
         # parse sign
@@ -115,7 +117,7 @@ _sscanf_loop:
         cmp gt, t0, 57
         jtr @adv+
         # accumulate digits
-        vpsh s4
+        psh s4
         mov s4, 0
         @dig_d:
             mov ea, s0
@@ -140,7 +142,7 @@ _sscanf_loop:
         add s2, 4
         mov ea, t0
         ste i32t, 0, s4
-        vpop s4
+        pop s4
         inc s3
         jmp @adv+
 
@@ -157,7 +159,8 @@ _sscanf_loop:
             cmp eq, t0, 13
             jtr @wu_adv+
             jmp @wu_done+
-            @wu_adv: inc s0
+            @wu_adv:
+                inc s0
             jmp @wu-
         @wu_done:
         mov ea, s0
@@ -166,7 +169,7 @@ _sscanf_loop:
         jtr @adv+
         cmp gt, t0, 57
         jtr @adv+
-        vpsh s4
+        psh s4
         mov s4, 0
         @dig_u:
             mov ea, s0
@@ -186,7 +189,7 @@ _sscanf_loop:
         add s2, 4
         mov ea, t0
         ste u32t, 0, s4
-        vpop s4
+        pop s4
         inc s3
         jmp @adv+
 
@@ -203,7 +206,8 @@ _sscanf_loop:
             cmp eq, t0, 13
             jtr @ws2_adv+
             jmp @ws2_done+
-            @ws2_adv: inc s0
+            @ws2_adv:
+                inc s0
             jmp @ws2-
         @ws2_done:
         mov ea, s0
@@ -252,7 +256,8 @@ _sscanf_loop:
             cmp eq, t0, 13
             jtr @wf_adv+
             jmp @wf_done+
-            @wf_adv: inc s0
+            @wf_adv:
+                inc s0
             jmp @wf-
         @wf_done:
         vpsh s4..s6
