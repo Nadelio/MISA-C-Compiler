@@ -882,8 +882,10 @@ static void handle_directive(Lexer *l) {
 					int di;
 					for (di = 0; di < nsearch && !probe; di++) {
 						int slen = (int)strlen(search[di]);
-						if (slen + pi < 511) {
+						int need_sep = slen > 0 && search[di][slen-1] != '/' && search[di][slen-1] != '\\';
+						if (slen + need_sep + pi < 511) {
 							memcpy(resolved, search[di], slen);
+							if (need_sep) resolved[slen++] = '/';
 							memcpy(resolved + slen, path, pi + 1);
 							probe = fopen(resolved, "r");
 						}
