@@ -137,7 +137,7 @@ jobs:
             ## Usage
 
             ```
-            misacc <input.c> [-o output.misa] [--doc|-gd]
+            misacc <input.c> [-o output.misa] [--doc|-gd] [-isystem <dir>]
             ```
 
             | Argument | Description |
@@ -145,11 +145,15 @@ jobs:
             | `<input.c>` | C89 source file to compile (required) |
             | `-o output.misa` | Write output to a file instead of stdout |
             | `--doc`/`-gd` | Generate doc comments in output (See: [Doc Comment Format](https://github.com/Nadelio/MISA-C-Compiler/blob/main/Mnemonimov%20Manual/Doc%20Comment%20Format.md)) |
+            | `-isystem <dir>` | Override the system include search directory for `<...>` includes |
 
             **Examples:**
             ```
             # Compile and write to a file
             misacc program.c -o program.misa
+
+            # Compile with a custom standard library
+            misacc program.c -isystem ~/misacc/include -o program.misa
 
             # Compile and pipe output
             misacc program.c > program.misa

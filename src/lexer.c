@@ -741,16 +741,21 @@ static void handle_directive(Lexer *l) {
 					}
 				}
 				if (!probe && delim_open == '<') {
+					const char *search[3];
+					int nsearch = 0;
+					if (l->sys_include_dir)
+						search[nsearch++] = l->sys_include_dir;
 #ifdef _WIN32
-					static const char *sys_dirs[] = { "C:/MinGW/include/", NULL };
+					search[nsearch++] = "C:/MinGW/include/";
 #else
-					static const char *sys_dirs[] = { "/usr/include/", NULL };
+					search[nsearch++] = "/usr/include/";
 #endif
+					search[nsearch] = NULL;
 					int di;
-					for (di = 0; sys_dirs[di] && !probe; di++) {
-						int slen = (int)strlen(sys_dirs[di]);
+					for (di = 0; di < nsearch && !probe; di++) {
+						int slen = (int)strlen(search[di]);
 						if (slen + pi < 511) {
-							memcpy(resolved, sys_dirs[di], slen);
+							memcpy(resolved, search[di], slen);
 							memcpy(resolved + slen, path, pi + 1);
 							probe = fopen(resolved, "r");
 						}

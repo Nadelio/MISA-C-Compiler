@@ -33,12 +33,13 @@ clang -Iinclude -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE src/token.
 
 ## Usage
 ```
-misacc.exe <input.c> [-o output.asm] [--doc|-gd]
+misacc.exe <input.c> [-o output.asm] [--doc|-gd] [-isystem <dir>]
 ```
 
 - `<input.c>` — C89 source file to compile (required)
 - `-o output.asm` — write output to a file instead of stdout
-- `--doc`/`-gd` - generate doc comments in the output (See: [Doc Comment Format](Mnemonimov%20Manual/Doc%20Comment%20Format.md))
+- `--doc`/`-gd` — generate doc comments in the output (See: [Doc Comment Format](Mnemonimov%20Manual/Doc%20Comment%20Format.md))
+- `-isystem <dir>` — override the system include search directory for `<...>` includes (e.g. `~/misacc/include`)
 
 ## Special C Syntax
 In order to support complete interop between MISA and C, some new syntax had to be introduced for various features, here are those features, and the C syntax to utilize them:
