@@ -111,12 +111,23 @@ jobs:
           name: misacc-macos
           path: artifacts/macos
 
-      - name: Rename artifacts
+      - name: Bundle artifacts
         run: |
-          mv artifacts/windows/misacc.exe artifacts/misacc-windows.exe
-          mv artifacts/linux/misacc       artifacts/misacc-linux
-          mv artifacts/macos/misacc       artifacts/misacc-macos
-          chmod +x artifacts/misacc-linux artifacts/misacc-macos
+          mkdir -p bundle/windows bundle/linux bundle/macos
+
+          cp artifacts/windows/misacc.exe bundle/windows/
+          cp -r "MISA Libraries" bundle/windows/
+          cd bundle/windows && zip -r ../../artifacts/misacc-windows.zip . && cd ../..
+
+          cp artifacts/linux/misacc bundle/linux/
+          chmod +x bundle/linux/misacc
+          cp -r "MISA Libraries" bundle/linux/
+          cd bundle/linux && zip -r ../../artifacts/misacc-linux.zip . && cd ../..
+
+          cp artifacts/macos/misacc bundle/macos/
+          chmod +x bundle/macos/misacc
+          cp -r "MISA Libraries" bundle/macos/
+          cd bundle/macos && zip -r ../../artifacts/misacc-macos.zip . && cd ../..
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -199,6 +210,6 @@ jobs:
 
             **Commit:** ${{ github.sha }}
           files: |
-            artifacts/misacc-windows.exe
-            artifacts/misacc-linux
-            artifacts/misacc-macos
+            artifacts/misacc-windows.zip
+            artifacts/misacc-linux.zip
+            artifacts/misacc-macos.zip
