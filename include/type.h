@@ -10,11 +10,11 @@ typedef enum {
 	TY_VOID,
 	TY_CHAR,    /* signed 8-bit  */
 	TY_UCHAR,   /* unsigned 8-bit */
-	TY_SHORT,   /* signed 16-bit */
-	TY_USHORT,  /* unsigned 16-bit */
-	TY_INT,     /* signed 32-bit */
-	TY_UINT,    /* unsigned 32-bit */
-	TY_LONG,    /* signed 32-bit (same as int on MISA) */
+	TY_SHORT,
+	TY_USHORT,
+	TY_INT,     /* signed 16-bit */
+	TY_UINT,    /* unsigned 16-bit */
+	TY_LONG,    /* signed 32-bit */
 	TY_ULONG,   /* unsigned 32-bit */
 	TY_FLOAT,   /* 32-bit float */
 	TY_DOUBLE,  /* mapped to float on MISA */

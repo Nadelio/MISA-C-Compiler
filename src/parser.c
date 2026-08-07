@@ -513,7 +513,7 @@ static AstNode *parse_stmt(Parser *p) {
 
 	if (check(p, TOK_KW_BREAK)) {
 		advance(p);
-		if (check(p, TOK_LPAREN)) { // break() function
+		if (check(p, TOK_LPAREN)) {
 			advance(p);
 			expect(p, TOK_RPAREN);
 			AstNode* breakIdent = ast_new(AST_IDENT, p->cur.line);
@@ -529,7 +529,7 @@ static AstNode *parse_stmt(Parser *p) {
 			
 			expect(p, TOK_SEMICOLON);
 			return breakStatement;
-		} else {  // break; keyword
+		} else {
 			expect(p, TOK_SEMICOLON);
 			return ast_new(AST_BREAK, line);
 		}

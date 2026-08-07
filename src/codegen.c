@@ -1745,21 +1745,15 @@ static void cg_global_var(CodeGen *cg, AstNode *n) {
 			Type *elem_t = t->base ? t->base : t;
 			int elem_sz = type_sizeof(elem_t);
 			if (elem_sz <= 0) elem_sz = 4;
-			// Here (sz + 3) / 4 does ensure its ceil during the sz division
 			fprintf(cg->out, "%s:\tres %s %d, 0\n", lbl,
 			    type_misa_name(t->base ? t->base : t), count * ((elem_sz + 3) / 4));
 		}
 	} else if (t->kind == TY_STRUCT || t->kind == TY_UNION) {
-		// same as above, (sz + 3) / 4 does ensure its ceil during the sz division
 		fprintf(cg->out, "%s:\tres u32t %d, 0\n", lbl, (sz + 3) / 4);
 	} else {
 		fprintf(cg->out, "%s:\tres %s 1, 0\n", lbl, type_misa_name(t));
 	}
 }
-
-/* ------------------------------------------------------------------ */
-/* Dead-code elimination: unused C function culling                   */
-/* ------------------------------------------------------------------ */
 
 typedef struct { char **elems; int count, cap; } StrSet;
 
@@ -1780,12 +1774,10 @@ static void ss_free(StrSet *s) {
 	free(s->elems); ss_init(s);
 }
 
-/* Collect every called / address-taken function name from an AST subtree. */
 static void dce_refs(AstNode *n, StrSet *out) {
 	if (!n) return;
 	switch (n->kind) {
 	case AST_CALL:
-		/* Direct call: record the callee name without recursing into it. */
 		if (n->u.call.callee && n->u.call.callee->kind == AST_IDENT)
 			ss_add(out, n->u.call.callee->u.ident.name);
 		else
@@ -1793,7 +1785,6 @@ static void dce_refs(AstNode *n, StrSet *out) {
 		{ AstList *a = n->u.call.args; while (a) { dce_refs(a->node, out); a = a->next; } }
 		break;
 	case AST_IDENT:
-		/* Conservative: any identifier may be a function used as a value. */
 		ss_add(out, n->u.ident.name);
 		break;
 	case AST_VAR_DECL:    dce_refs(n->u.var.init, out); break;
@@ -1824,14 +1815,6 @@ static void dce_refs(AstNode *n, StrSet *out) {
 	}
 }
 
-/*
- * Compute the set of live C function names reachable from "main".
- *
- * Works by BFS: the live set doubles as the work queue (processed up to
- * qhead).  Because ss_add is idempotent, re-discovering a name is a no-op.
- * Multiple transitive hops are handled automatically since every newly
- * added name will be processed when qhead reaches it.
- */
 static StrSet dce_live(AstList *decls) {
 	typedef struct { const char *name; StrSet refs; } FE;
 	FE *fe = NULL; int nfe = 0, fecap = 0;
