@@ -1,6 +1,6 @@
 #include <misa.h>
-#include "tests/c/cell_width.asm"
-#include "tests/c/local_func.asm"
+#include "cell_width.asm"
+#include "local_func.asm"
 
 extern char CELL_WIDTH;
 extern struct Player player;

@@ -5,11 +5,46 @@
 #define SCREEN_HEIGHT           240
 #define MAX_TERMINAL_INPUT_SIZE 256
 
+#define BTN_SELECT 512
+#define BTN_START 256
+#define BTN_LEFT 128
+#define BTN_RIGHT 64
+#define BTN_UP 32
+#define BTN_DOWN 16
+#define BTN_A 8
+#define BTN_B 4
+#define BTN_X 2
+#define BTN_Y 1
+
 #define MOUSE_BTN_LEFT       1
 #define MOUSE_BTN_RIGHT      2
 #define MOUSE_BTN_MIDDLE     4
 #define MOUSE_BTN_WHEEL_UP   8
 #define MOUSE_BTN_WHEEL_DOWN 16
+
+#define KBE_PRESSED 1
+#define KBE_REPEAT 2
+#define KBE_CTRL 4
+#define KBE_SHIFT 8
+#define KBE_ALT 16
+
+#define KEY_TAB 0x09
+#define KEY_BACKSPACE 0x08
+#define KEY_ENTER 0x0d
+#define KEY_ESC 0x1b
+#define KEY_CTRL 0x11
+#define KEY_SHIFT 0x10
+#define KEY_ALT 0x12
+#define KEY_LEFT 0x25
+#define KEY_RIGHT 0x27
+#define KEY_UP 0x26
+#define KEY_DOWN 0x28
+#define KEY_INSERT 0x2d
+#define KEY_DELETE 0x2e
+#define KEY_HOME 0x24
+#define KEY_END 0x23
+#define KEY_PAGE_UP 0x21
+#define KEY_PAGE_DOWN 0x22
 
 #define SYS_PRINT_INT               0
 #define SYS_PRINT_LINE_INT          1
@@ -37,6 +72,7 @@
 #define SYS_ALLOW_UNSAFE_JUMP       23
 #define SYS_GET_MOUSE_POSITION      24
 #define SYS_GET_MOUSE_BUTTON_INPUT  25
+#define SYS_GET_KEYBOARD_INPUT      26
 
 extern void print_int(int value);
 extern void println_int(int value);
@@ -55,6 +91,7 @@ extern int get_input(void);
 extern int get_mouse_x(void);
 extern int get_mouse_y(void);
 extern int get_mouse_button_input(void);
+extern int get_keyboard_input(void);
 extern int get_terminal_input_size(void);
 extern int read_terminal_input(char *buf, int size);
 

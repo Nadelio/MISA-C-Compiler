@@ -30,6 +30,7 @@ static const BuiltinInfo builtin_table[] = {
 	{ BUILTIN_GET_INPUT,               "SYS_GET_INPUT",               0 },
 	{ BUILTIN_GET_MOUSE_X,             "SYS_GET_MOUSE_POSITION",      0 },
 	{ BUILTIN_GET_MOUSE_BUTTON_INPUT,  "SYS_GET_MOUSE_BUTTON_INPUT",  0 },
+	{ BUILTIN_GET_KEYBOARD_INPUT,      "SYS_GET_KEYBOARD_INPUT",      0 },
 	{ BUILTIN_GET_TERMINAL_INPUT_SIZE, "SYS_GET_TERMINAL_INPUT_SIZE", 0 },
 	{ BUILTIN_READ_TERMINAL_INPUT,     "SYS_READ_TERMINAL_INPUT",     1 },
 	{ BUILTIN_GET_UNIX_TIME,           "SYS_GET_UNIX_TIME",           0 },
@@ -75,6 +76,7 @@ static const SyscallNameEntry syscall_name_table[] = {
 	{ 23, "SYS_ALLOW_UNSAFE_JUMP"         },
 	{ 24, "SYS_GET_MOUSE_POSITION"        },
 	{ 25, "SYS_GET_MOUSE_BUTTON_INPUT"    },
+	{ 26, "SYS_GET_KEYBOARD_INPUT"        },
 	{ -1, NULL }
 };
 
@@ -1121,6 +1123,191 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 	return r;
 }
 
+static int cg_extract_base_ident(AstNode *n, const char **out_name) {
+	if (!n || !out_name) return 0;
+	if (n->kind == AST_IDENT) {
+		*out_name = n->u.ident.name;
+		return 1;
+	}
+	if (n->kind == AST_SUBSCRIPT && n->u.subscript.base) {
+		return cg_extract_base_ident(n->u.subscript.base, out_name);
+	}
+	if (n->kind == AST_MEMBER && n->u.member.object) {
+		return cg_extract_base_ident(n->u.member.object, out_name);
+	}
+	return 0;
+}
+
+static int cg_extract_const_index(AstNode *n, long long *out_val) {
+	if (!n || !out_val) return 0;
+	if (n->kind == AST_INT_LIT) {
+		*out_val = n->u.int_lit.value;
+		return 1;
+	}
+	return 0;
+}
+
+static AstNode *cg_get_assign_stmt(AstNode *n) {
+	if (!n) return NULL;
+	if (n->kind == AST_ASSIGN) return n;
+	if (n->kind == AST_EXPR_STMT && n->u.expr_stmt.expr &&
+	    n->u.expr_stmt.expr->kind == AST_ASSIGN) {
+		return n->u.expr_stmt.expr;
+	}
+	return NULL;
+}
+
+static const char *cg_vector_float_mnemonic(int op) {
+	switch (op) {
+	case TOK_PLUS:  return "vfadd";
+	case TOK_MINUS: return "vfsub";
+	case TOK_STAR:  return "vfmul";
+	case TOK_SLASH: return "vfdiv";
+	default:        return NULL;
+	}
+}
+
+typedef struct {
+	long long index;
+	const char *dest;
+	const char *lhs;
+	const char *rhs;
+	const char *mnemonic;
+	AstNode *lhs_node;
+	AstNode *left_node;
+	AstNode *right_node;
+	Type *elem_type;
+} VecElemOp;
+
+static int cg_match_float_elem_op(AstNode *n, VecElemOp *out) {
+	AstNode *assign = cg_get_assign_stmt(n);
+	if (!assign || assign->kind != AST_ASSIGN || assign->u.assign.op != TOK_ASSIGN) return 0;
+	AstNode *lhs = assign->u.assign.lhs;
+	AstNode *rhs = assign->u.assign.rhs;
+	if (!lhs || lhs->kind != AST_SUBSCRIPT) return 0;
+	if (!rhs || rhs->kind != AST_BINARY) return 0;
+
+	const char *mn = cg_vector_float_mnemonic(rhs->u.binary.op);
+	if (!mn) return 0;
+
+	AstNode *left = rhs->u.binary.left;
+	AstNode *right = rhs->u.binary.right;
+	if (!left || left->kind != AST_SUBSCRIPT) return 0;
+	if (!right || right->kind != AST_SUBSCRIPT) return 0;
+	if (!lhs->type || !type_is_float(lhs->type)) return 0;
+	if (!left->type || !right->type) return 0;
+	if (!type_is_float(left->type) || !type_is_float(right->type)) return 0;
+
+	long long li = 0, ri = 0;
+	if (!cg_extract_const_index(lhs->u.subscript.index, &out->index)) return 0;
+	if (!cg_extract_const_index(left->u.subscript.index, &li)) return 0;
+	if (!cg_extract_const_index(right->u.subscript.index, &ri)) return 0;
+	if (li != out->index || ri != out->index) return 0;
+
+	if (!cg_extract_base_ident(lhs->u.subscript.base, &out->dest)) return 0;
+	if (!cg_extract_base_ident(left->u.subscript.base, &out->lhs)) return 0;
+	if (!cg_extract_base_ident(right->u.subscript.base, &out->rhs)) return 0;
+	if (!out->dest || !out->lhs || !out->rhs) return 0;
+
+	out->mnemonic = mn;
+	out->lhs_node = lhs;
+	out->left_node = left;
+	out->right_node = right;
+	out->elem_type = lhs->type;
+	return 1;
+}
+
+static int cg_alloc_temp_run(CodeGen *cg, int count) {
+	int i, j;
+	for (i = 0; i + count <= 15; i++) {
+		for (j = 0; j < count; j++)
+			if (cg->temp_used[i + j]) break;
+		if (j == count) {
+			for (j = 0; j < count; j++) cg->temp_used[i + j] = 1;
+			return i;
+		}
+	}
+	return -1;
+}
+
+static void cg_free_temp_run(CodeGen *cg, int start, int count) {
+	int j;
+	for (j = 0; j < count; j++) cg_free_temp(cg, start + j);
+}
+
+/* Loads `count` consecutive elements starting at `elem` into regs [start, start+count). */
+static void cg_vector_load_range(CodeGen *cg, AstNode *elem, FrameLayout *fl,
+	int start, int count, const char *tn, int esz) {
+	int addr = cg_lvalue_addr(cg, elem, fl);
+	int k;
+	emit(cg, "mov ea, %s", temp_name(addr));
+	for (k = 0; k < count; k++)
+		emit(cg, "lde %s, %s, %d", tn, temp_name(start + k), k * esz);
+	cg_free_temp(cg, addr);
+}
+
+#define CG_VECTOR_MIN_LEN 3
+#define CG_VECTOR_MAX_LEN 6
+
+static int cg_try_lower_float_vector(CodeGen *cg, AstList *start, FrameLayout *fl,
+	AstList **out_next) {
+	VecElemOp first;
+	VecElemOp cur;
+	AstList *it;
+	int count = 1;
+	int esz, a_run, b_run, k;
+	const char *tn;
+
+	memset(&first, 0, sizeof(first));
+	if (!start || !cg_match_float_elem_op(start->node, &first)) return 0;
+
+	it = start->next;
+	while (it && count < CG_VECTOR_MAX_LEN) {
+		memset(&cur, 0, sizeof(cur));
+		if (!cg_match_float_elem_op(it->node, &cur)) break;
+		if (cur.index != first.index + count) break;
+		if (cur.mnemonic != first.mnemonic) break;
+		if (strcmp(cur.dest, first.dest) || strcmp(cur.lhs, first.lhs) ||
+		    strcmp(cur.rhs, first.rhs)) break;
+		count++;
+		it = it->next;
+	}
+	if (count < CG_VECTOR_MIN_LEN) return 0;
+
+	/* Aliasing between the destination and a source would change element-wise semantics. */
+	if (!strcmp(first.dest, first.lhs) || !strcmp(first.dest, first.rhs)) return 0;
+
+	esz = type_sizeof(first.elem_type);
+	if (esz <= 0) esz = 4;
+	tn = type_misa_name(first.elem_type);
+
+	a_run = cg_alloc_temp_run(cg, count);
+	if (a_run < 0) return 0;
+	b_run = cg_alloc_temp_run(cg, count);
+	if (b_run < 0) { cg_free_temp_run(cg, a_run, count); return 0; }
+
+	cg_vector_load_range(cg, first.left_node, fl, a_run, count, tn, esz);
+	cg_vector_load_range(cg, first.right_node, fl, b_run, count, tn, esz);
+
+	emit(cg, "%s %s..%s, %s.., %s..", first.mnemonic,
+	    temp_name(a_run), temp_name(a_run + count - 1),
+	    temp_name(a_run), temp_name(b_run));
+
+	{
+		int addr = cg_lvalue_addr(cg, first.lhs_node, fl);
+		emit(cg, "mov ea, %s", temp_name(addr));
+		for (k = 0; k < count; k++)
+			emit(cg, "ste %s, %d, %s", tn, k * esz, temp_name(a_run + k));
+		cg_free_temp(cg, addr);
+	}
+
+	cg_free_temp_run(cg, b_run, count);
+	cg_free_temp_run(cg, a_run, count);
+
+	*out_next = it;
+	return 1;
+}
+
 static void cg_stmt(CodeGen *cg, AstNode *n, FrameLayout *fl);
 
 static void cg_stmt(CodeGen *cg, AstNode *n, FrameLayout *fl) {
@@ -1133,8 +1320,16 @@ static void cg_stmt(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 		break;
 
 	case AST_BLOCK:
-		for (it = n->u.block.items; it; it = it->next)
+		it = n->u.block.items;
+		while (it) {
+			AstList *next = NULL;
+			if (cg_try_lower_float_vector(cg, it, fl, &next)) {
+				it = next;
+				continue;
+			}
 			cg_stmt(cg, it->node, fl);
+			it = it->next;
+		}
 		break;
 
 	case AST_VAR_DECL: {
@@ -1643,6 +1838,12 @@ static void cg_func(CodeGen *cg, AstNode *n) {
 	if (n->u.func.body) {
 		AstList *bl = n->u.func.body->u.block.items;
 		while (bl) {
+			AstList *next = NULL;
+			if (cg_try_lower_float_vector(cg, bl, &fl, &next)) {
+				last_stmt = bl->node;
+				bl = next;
+				continue;
+			}
 			cg_stmt(cg, bl->node, &fl);
 			last_stmt = bl->node;
 			bl = bl->next;
@@ -1745,21 +1946,15 @@ static void cg_global_var(CodeGen *cg, AstNode *n) {
 			Type *elem_t = t->base ? t->base : t;
 			int elem_sz = type_sizeof(elem_t);
 			if (elem_sz <= 0) elem_sz = 4;
-			// Here (sz + 3) / 4 does ensure its ceil during the sz division
 			fprintf(cg->out, "%s:\tres %s %d, 0\n", lbl,
 			    type_misa_name(t->base ? t->base : t), count * ((elem_sz + 3) / 4));
 		}
 	} else if (t->kind == TY_STRUCT || t->kind == TY_UNION) {
-		// same as above, (sz + 3) / 4 does ensure its ceil during the sz division
 		fprintf(cg->out, "%s:\tres u32t %d, 0\n", lbl, (sz + 3) / 4);
 	} else {
 		fprintf(cg->out, "%s:\tres %s 1, 0\n", lbl, type_misa_name(t));
 	}
 }
-
-/* ------------------------------------------------------------------ */
-/* Dead-code elimination: unused C function culling                   */
-/* ------------------------------------------------------------------ */
 
 typedef struct { char **elems; int count, cap; } StrSet;
 
@@ -1780,12 +1975,10 @@ static void ss_free(StrSet *s) {
 	free(s->elems); ss_init(s);
 }
 
-/* Collect every called / address-taken function name from an AST subtree. */
 static void dce_refs(AstNode *n, StrSet *out) {
 	if (!n) return;
 	switch (n->kind) {
 	case AST_CALL:
-		/* Direct call: record the callee name without recursing into it. */
 		if (n->u.call.callee && n->u.call.callee->kind == AST_IDENT)
 			ss_add(out, n->u.call.callee->u.ident.name);
 		else
@@ -1793,7 +1986,6 @@ static void dce_refs(AstNode *n, StrSet *out) {
 		{ AstList *a = n->u.call.args; while (a) { dce_refs(a->node, out); a = a->next; } }
 		break;
 	case AST_IDENT:
-		/* Conservative: any identifier may be a function used as a value. */
 		ss_add(out, n->u.ident.name);
 		break;
 	case AST_VAR_DECL:    dce_refs(n->u.var.init, out); break;
@@ -1824,14 +2016,6 @@ static void dce_refs(AstNode *n, StrSet *out) {
 	}
 }
 
-/*
- * Compute the set of live C function names reachable from "main".
- *
- * Works by BFS: the live set doubles as the work queue (processed up to
- * qhead).  Because ss_add is idempotent, re-discovering a name is a no-op.
- * Multiple transitive hops are handled automatically since every newly
- * added name will be processed when qhead reaches it.
- */
 static StrSet dce_live(AstList *decls) {
 	typedef struct { const char *name; StrSet refs; } FE;
 	FE *fe = NULL; int nfe = 0, fecap = 0;

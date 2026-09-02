@@ -514,6 +514,7 @@ void sema_init(Sema *s, SymTab *st) {
 	reg_builtin(s, "get_mouse_x",             BUILTIN_GET_MOUSE_X,             type_make_int(0),  0);
 	reg_builtin(s, "get_mouse_y",             BUILTIN_GET_MOUSE_Y,             type_make_int(0),  0);
 	reg_builtin(s, "get_mouse_button_input",  BUILTIN_GET_MOUSE_BUTTON_INPUT,  type_make_int(0),  0);
+	reg_builtin(s, "get_keyboard_input",      BUILTIN_GET_KEYBOARD_INPUT,      type_make_int(0),  0);
 	reg_builtin(s, "get_terminal_input_size", BUILTIN_GET_TERMINAL_INPUT_SIZE, type_make_int(0),  0);
 	reg_builtin(s, "read_terminal_input",     BUILTIN_READ_TERMINAL_INPUT,     type_make_int(0),  2,
 	    type_make_pointer(type_make_char(0)), type_make_int(0));
@@ -576,6 +577,74 @@ void sema_init(Sema *s, SymTab *st) {
 			Symbol *sym = symtab_define(s->symtab, mbtn[i].name,
 			    SYM_ENUM_CONST, type_make_int(0));
 			sym->enum_value = mbtn[i].val;
+		}
+	}
+
+	{
+		static const struct { const char *name; int val; } btn[] = {
+			{ "BTN_SELECT", 512 },
+			{ "BTN_START", 256 },
+			{ "BTN_LEFT", 128 },
+			{ "BTN_RIGHT", 64 },
+			{ "BTN_UP", 32 },
+			{ "BTN_DOWN", 16 },
+			{ "BTN_A", 8 },
+			{ "BTN_B", 4 },
+			{ "BTN_X", 2 },
+			{ "BTN_Y", 1 },
+			{ NULL, 0 }
+		};
+		int i;
+		for (i = 0; btn[i].name; i++) {
+			Symbol *sym = symtab_define(s->symtab, btn[i].name,
+			    SYM_ENUM_CONST, type_make_int(0));
+			sym->enum_value = btn[i].val;
+		}
+	}
+
+	{
+		static const struct { const char *name; int val; } kbe[] = {
+			{ "KBE_PRESSED", 1 },
+			{ "KBE_REPEAT", 2 },
+			{ "KBE_CTRL", 4 },
+			{ "KBE_SHIFT", 8 },
+			{ "KBE_ALT", 16 },
+			{ NULL, 0 }
+		};
+		int i;
+		for (i = 0; kbe[i].name; i++) {
+			Symbol *sym = symtab_define(s->symtab, kbe[i].name,
+			    SYM_ENUM_CONST, type_make_int(0));
+			sym->enum_value = kbe[i].val;
+		}
+	}
+
+	{
+		static const struct { const char *name; int val; } key[] = {
+			{ "KEY_TAB", 0x09 },
+			{ "KEY_BACKSPACE", 0x08 },
+			{ "KEY_ENTER", 0x0d },
+			{ "KEY_ESC", 0x1b },
+			{ "KEY_CTRL", 0x11 },
+			{ "KEY_SHIFT", 0x10 },
+			{ "KEY_ALT", 0x12 },
+			{ "KEY_LEFT", 0x25 },
+			{ "KEY_RIGHT", 0x27 },
+			{ "KEY_UP", 0x26 },
+			{ "KEY_DOWN", 0x28 },
+			{ "KEY_INSERT", 0x2d },
+			{ "KEY_DELETE", 0x2e },
+			{ "KEY_HOME", 0x24 },
+			{ "KEY_END", 0x23 },
+			{ "KEY_PAGE_UP", 0x21 },
+			{ "KEY_PAGE_DOWN", 0x22 },
+			{ NULL, 0 }
+		};
+		int i;
+		for (i = 0; key[i].name; i++) {
+			Symbol *sym = symtab_define(s->symtab, key[i].name,
+			    SYM_ENUM_CONST, type_make_int(0));
+			sym->enum_value = key[i].val;
 		}
 	}
 

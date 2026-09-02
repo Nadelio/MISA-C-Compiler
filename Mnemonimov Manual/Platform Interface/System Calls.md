@@ -78,6 +78,10 @@ Returns: `a0:pos_x, a1:pos_y`
 Gets the current mouse button input state. See [Built-In Symbols](../Assembly/Built-In%20Symbols.md) for a list of mouse button constants.
 Returns: `a0:mouse_button_input_state`
 
+**SYS_GET_KEYBOARD_INPUT**
+Gets the next buffered keyboard input event. Printable keys use ASCII codes, while control and navigation keys use custom key codes. See [Built-In Symbols](../Assembly/Built-In%20Symbols.md) for a reference of key codes.
+Returns: `a0:key_code, a1:event_flags`
+
 **SYS_GET_TERMINAL_INPUT_SIZE**
 Gets the size of the next string in the terminal input queue, including the null-termination byte. Returns a `0` if the terminal input queue is empty.
 Returns: `a0:string_size`

@@ -6,29 +6,20 @@
 
 #define MACRO_INIT_CAP 16
 
-/*
- * Normalise a relative path in-place: resolve . and .. components and
- * convert backslashes to forward slashes.  The result is a canonical
- * representation so that two different textual paths to the same file
- * compare equal (important for the seen_includes deduplication check).
- */
 static void normalize_path(char *path) {
 	int i;
 	char out[512];
 	int  out_len = 0;
 	char *p;
 
-	/* Unify separators */
 	for (i = 0; path[i]; i++)
 		if (path[i] == '\\') path[i] = '/';
 
 	p = path;
-	/* Preserve a leading drive letter (Windows: "C:/...") */
 	if (p[0] && p[1] == ':') {
 		if (out_len + 2 < 511) { out[out_len++] = p[0]; out[out_len++] = ':'; }
 		p += 2;
 	}
-	/* Preserve a leading slash for absolute paths */
 	if (*p == '/') { if (out_len < 511) out[out_len++] = '/'; p++; }
 
 	while (*p) {
@@ -37,9 +28,7 @@ static void normalize_path(char *path) {
 		int clen = (int)(end - p);
 
 		if (clen == 0 || (clen == 1 && p[0] == '.')) {
-			/* empty segment or "." — skip */
 		} else if (clen == 2 && p[0] == '.' && p[1] == '.') {
-			/* ".." — remove the last path component from out */
 			if (out_len > 0 && out[out_len - 1] == '/') out_len--;
 			while (out_len > 0 && out[out_len - 1] != '/') out_len--;
 		} else {
@@ -377,13 +366,8 @@ static const char *lookup_macro(Lexer *l, const char *name) {
 	return m ? m->body : NULL;
 }
 
-/* Forward declaration for mutual recursion. */
 static void collect_asm_deps(Lexer *l, const char *asm_path);
 
-/*
- * Add path to asm_includes, deduplicating and then recursively collecting
- * any asm-includes found inside that asm file.
- */
 static void add_asm_include(Lexer *l, const char *path) {
 	int i;
 	for (i = 0; i < l->asm_include_count; i++)
@@ -397,10 +381,6 @@ static void add_asm_include(Lexer *l, const char *path) {
 	collect_asm_deps(l, path);
 }
 
-/*
- * Scan an asm file for "#include" lines that reference other asm files and
- * add them (and their transitive dependencies) to l->asm_includes.
- */
 static void collect_asm_deps(Lexer *l, const char *asm_path) {
 	FILE *f = fopen(asm_path, "r");
 	if (!f) return;
@@ -424,7 +404,6 @@ static void collect_asm_deps(Lexer *l, const char *asm_path) {
 		inc_path[pi] = '\0';
 		if (pi < 4 || strcmp(inc_path + pi - 4, ".asm") != 0) continue;
 
-		/* resolve relative to the including asm file's directory */
 		char resolved[512];
 		FILE *probe = fopen(inc_path, "r");
 		if (!probe) {
@@ -443,7 +422,7 @@ static void collect_asm_deps(Lexer *l, const char *asm_path) {
 		} else {
 			fclose(probe);
 		}
-		if (probe == NULL) continue; /* unresolvable — skip silently */
+		if (probe == NULL) continue;
 		add_asm_include(l, inc_path);
 	}
 	fclose(f);
@@ -868,7 +847,7 @@ static void handle_directive(Lexer *l) {
 						}
 					}
 				}
-				if (!probe && delim_open == '<') {
+				if (!probe) {
 					const char *search[3];
 					int nsearch = 0;
 					if (l->sys_include_dir)
@@ -891,8 +870,6 @@ static void handle_directive(Lexer *l) {
 						}
 					}
 				}
-				/* Canonicalise before the dedup check so that two different
-				   textual paths to the same file compare equal. */
 				normalize_path(resolved);
 				if (!probe) {
 					fprintf(stderr, "%s:%d: warning: cannot open include '%s'\n",
