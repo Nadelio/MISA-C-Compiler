@@ -314,7 +314,7 @@ draw_impl_:
 	ste i16t, -8, t0
 	mov ea, fp
 	lde i16t, t4, -4
-	mov t5, 100
+	mov t5, 2
 	cmp gte, t4, t5
 	sel t3, 1, 0
 	mov t2, t3
@@ -322,7 +322,7 @@ draw_impl_:
 	jfs __L18
 	mov ea, fp
 	lde i16t, t4, -4
-	mov t6, 100
+	mov t6, 2
 	mov t7, 120
 	add t5, t6, t7
 	cmp lt, t4, t5
@@ -335,7 +335,7 @@ __L18:
 	jfs __L17
 	mov ea, fp
 	lde i16t, t3, -8
-	mov t4, 90
+	mov t4, 1
 	cmp gte, t3, t4
 	sel t2, 1, 0
 	cmp neq, t2, zr
@@ -346,7 +346,7 @@ __L17:
 	jfs __L16
 	mov ea, fp
 	lde i16t, t2, -8
-	mov t4, 90
+	mov t4, 1
 	mov t5, 60
 	add t3, t4, t5
 	cmp lt, t2, t3
@@ -368,8 +368,8 @@ __L16:
 	mov a0, t1
 	syscall SYS_DRAW_RECT
 	mov t0, a0
-	mov t1, 100
-	mov t2, 90
+	mov t1, 2
+	mov t2, 1
 	mov t3, 120
 	mov t4, 60
 	mov ea, fp
@@ -390,8 +390,8 @@ __L20:
 	mov a0, t1
 	syscall SYS_DRAW_RECT
 	mov t0, a0
-	mov t1, 100
-	mov t2, 90
+	mov t1, 2
+	mov t2, 1
 	mov t3, 120
 	mov t4, 2
 	mov t5, 220
@@ -402,8 +402,8 @@ __L20:
 	mov a0, t1
 	syscall SYS_DRAW_RECT
 	mov t0, a0
-	mov t1, 100
-	mov t4, 90
+	mov t1, 2
+	mov t4, 1
 	mov t5, 60
 	add t3, t4, t5
 	mov t4, 2
@@ -418,8 +418,8 @@ __L20:
 	mov a0, t1
 	syscall SYS_DRAW_RECT
 	mov t0, a0
-	mov t1, 100
-	mov t2, 90
+	mov t1, 2
+	mov t2, 1
 	mov t3, 2
 	mov t4, 60
 	mov t5, 220
@@ -430,12 +430,12 @@ __L20:
 	mov a0, t1
 	syscall SYS_DRAW_RECT
 	mov t0, a0
-	mov t3, 100
+	mov t3, 2
 	mov t4, 120
 	add t2, t3, t4
 	mov t3, 2
 	sub t1, t2, t3
-	mov t2, 90
+	mov t2, 1
 	mov t3, 2
 	mov t4, 60
 	mov t5, 220
@@ -454,12 +454,12 @@ __L20:
 	mov ea, fp
 	ste i16t, -16, t0
 	lod i16t, t1, g__counter
-	mov t3, 100
+	mov t3, 2
 	mov t5, 120
 	mov t6, 2
 	div t4, t5, t6
 	add t2, t3, t4
-	mov t4, 90
+	mov t4, 1
 	mov t7, 60
 	mov ea, fp
 	lde i16t, t8, -16
@@ -513,7 +513,7 @@ __L23:
 	jtr __L21
 	mov ea, fp
 	lde i16t, t4, -8
-	mov t5, 100
+	mov t5, 2
 	cmp gte, t4, t5
 	sel t3, 1, 0
 	mov t2, t3
@@ -521,7 +521,7 @@ __L23:
 	jfs __L28
 	mov ea, fp
 	lde i16t, t4, -8
-	mov t6, 100
+	mov t6, 2
 	mov t7, 120
 	add t5, t6, t7
 	cmp lt, t4, t5
@@ -534,7 +534,7 @@ __L28:
 	jfs __L27
 	mov ea, fp
 	lde i16t, t3, -12
-	mov t4, 90
+	mov t4, 1
 	cmp gte, t3, t4
 	sel t2, 1, 0
 	cmp neq, t2, zr
@@ -545,7 +545,7 @@ __L27:
 	jfs __L26
 	mov ea, fp
 	lde i16t, t2, -12
-	mov t4, 90
+	mov t4, 1
 	mov t5, 60
 	add t3, t4, t5
 	cmp lt, t2, t3

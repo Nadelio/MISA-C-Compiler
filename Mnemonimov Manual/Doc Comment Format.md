@@ -1,9 +1,9 @@
-# Auto-Generated Documenation Format
+# Auto-Generated Documentation Format
 
 ## General Standards
 Documentation comments (or doc comments for short) should always be denoted by a double hashtag (`##`) instead of a single one (`#`). This helps separate standardized documentation that users should pay attention to from personal development notes that may be left behind in source code.
 
-*This standard assumes you are following [Calling Convention](Mnemonimov%20Manual/Platform%20Interface/ABI%20Conventions.md).*
+*This standard assumes you are following the [ABI Conventions](Platform%20Interface/ABI%20Conventions.md) guide.*
 
 ## The Header
 The header of your documentation comment should be a sub-bookmark (`sbmk`) followed by a Rust-like function header that represents your function at a glance. The name of the function in the sub-bookmark ''should'' match the name of your label, but it isn't required as long as you document that there is a difference between the label name and the sub-bookmark function name.

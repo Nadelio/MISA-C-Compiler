@@ -847,7 +847,7 @@ static void handle_directive(Lexer *l) {
 						}
 					}
 				}
-				if (!probe && delim_open == '<') {
+				if (!probe) {
 					const char *search[3];
 					int nsearch = 0;
 					if (l->sys_include_dir)

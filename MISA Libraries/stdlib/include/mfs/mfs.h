@@ -1,4 +1,4 @@
-#include "../src/mfs.asm"
+#include "../../src/mfs/mfs.asm"
 
 extern void     MFS.format();
 extern int      MFS.load();
