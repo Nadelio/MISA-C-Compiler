@@ -48,6 +48,8 @@ bmk "MFS - About"
 #   MFS.format  - write a fresh filesystem to storage
 #   MFS.load    - load an existing filesystem; returns MFS_ERR_INVALID on bad magic
 #   MFS.open    - find file by name; returns pa-rel dirent pointer or 0
+#   MFS.count   - return the number of live files
+#   MFS.get_name - copy a live file's name by index
 #   MFS.create  - create a new empty file entry
 #   MFS.read    - read file data into a buffer; returns bytes read or -1
 #   MFS.write   - replace file data from a buffer
@@ -360,6 +362,89 @@ MFS:
     .open:
         tpr a0
         cal MFS_INTERNAL.dirent_find
+        ret
+
+    sbmk "MFS.count(): count"
+    # Count live entries in the root directory.
+    # < a0: number of files
+    .count:
+        vpsh s0..s3
+        mov s0, MFS_DATA.dir_buf
+        mov s1, MFS_DATA.dir_buf + MFS_BLOCK_SIZE * MFS_DIR_BLOCK_COUNT
+        mov s2, 0
+        @loop:
+            sub t0, s1, s0
+            cmp lt, t0, MFS_DIRENT_MIN_REC_LEN
+            jtr @done+
+            cea s0, 0, 1
+            lde u16t, s3, MFS_DIRENT_REC_LEN
+            cmp eq, s3, 0
+            jtr @done+
+            lde u8t, t0, MFS_DIRENT_FLAGS
+            and t0, MFS_FLAG_IN_USE
+            cmp eq, t0, 0
+            jtr @advance+
+            inc s2
+            @advance:
+            add s0, s3
+            jmp @loop-
+        @done:
+        mov a0, s2
+        vpop s0..s3
+        ret
+
+    sbmk "MFS.get_name(index, dst, max): length | -1"
+    # Copy the name of a live directory entry into a null-terminated buffer.
+    # > a0: zero-based live entry index, a1: destination, a2: buffer size
+    # < a0: copied name length, or -1 if the index or buffer is invalid
+    .get_name:
+        vpsh s0..s7
+        mov s0, a0
+        tpr a1
+        mov s1, a1
+        mov s2, a2
+        cmp lt, s2, 1
+        jtr @not_found+
+        mov s3, MFS_DATA.dir_buf
+        mov s4, MFS_DATA.dir_buf + MFS_BLOCK_SIZE * MFS_DIR_BLOCK_COUNT
+        mov s6, 0
+        @loop:
+            sub t0, s4, s3
+            cmp lt, t0, MFS_DIRENT_MIN_REC_LEN
+            jtr @not_found+
+            cea s3, 0, 1
+            lde u16t, s5, MFS_DIRENT_REC_LEN
+            cmp eq, s5, 0
+            jtr @not_found+
+            lde u8t, t0, MFS_DIRENT_FLAGS
+            and t0, MFS_FLAG_IN_USE
+            cmp eq, t0, 0
+            jtr @advance+
+            cmp eq, s6, s0
+            jtr @found+
+            inc s6
+            @advance:
+            add s3, s5
+            jmp @loop-
+        @found:
+            lde u8t, s7, MFS_DIRENT_NAME_LEN
+            sub t0, s2, 1
+            cmp lte, s7, t0
+            jtr @copy+
+            mov s7, t0
+            @copy:
+            mov a0, s1
+            add a1, s3, MFS_DIRENT_NAME
+            mov a2, s7
+            syscall SYS_MEM_COPY
+            cea s1, s7, 1
+            ste u8t, 0, 0
+            mov a0, s7
+            jmp @done+
+        @not_found:
+            mov a0, -1
+        @done:
+        vpop s0..s7
         ret
 
     sbmk "MFS.create(name): error"

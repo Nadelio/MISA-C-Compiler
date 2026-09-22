@@ -92,6 +92,7 @@ extern int get_mouse_x(void);
 extern int get_mouse_y(void);
 extern int get_mouse_button_input(void);
 extern int get_keyboard_input(void);
+extern int get_keyboard_input_flags(void);
 extern int get_terminal_input_size(void);
 extern int read_terminal_input(char *buf, int size);
 

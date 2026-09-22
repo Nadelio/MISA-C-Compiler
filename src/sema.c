@@ -515,6 +515,7 @@ void sema_init(Sema *s, SymTab *st) {
 	reg_builtin(s, "get_mouse_y",             BUILTIN_GET_MOUSE_Y,             type_make_int(0),  0);
 	reg_builtin(s, "get_mouse_button_input",  BUILTIN_GET_MOUSE_BUTTON_INPUT,  type_make_int(0),  0);
 	reg_builtin(s, "get_keyboard_input",      BUILTIN_GET_KEYBOARD_INPUT,      type_make_int(0),  0);
+	reg_builtin(s, "get_keyboard_input_flags", BUILTIN_GET_KEYBOARD_INPUT_FLAGS, type_make_int(0), 0);
 	reg_builtin(s, "get_terminal_input_size", BUILTIN_GET_TERMINAL_INPUT_SIZE, type_make_int(0),  0);
 	reg_builtin(s, "read_terminal_input",     BUILTIN_READ_TERMINAL_INPUT,     type_make_int(0),  2,
 	    type_make_pointer(type_make_char(0)), type_make_int(0));

@@ -3,6 +3,8 @@
 extern void     MFS.format();
 extern int      MFS.load();
 extern void*    MFS.open(char *name);
+extern int      MFS.count();
+extern int      MFS.get_name(int index, char *dst, int max);
 extern int      MFS.create(char *name);
 extern int      MFS.read(char *name, void *dst, int max);
 extern int      MFS.write(char *name, void *src, int size);
