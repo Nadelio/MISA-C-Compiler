@@ -36,8 +36,8 @@ In addition to relative and absolute paths, MISA supports virtual paths for refe
 
 Available virtual folders:
 
-- `@u/` → the user projects directory.
-- `@s/` → the sample projects directory.
+- `@u/` -> the user projects directory.
+- `@s/` -> the sample projects directory.
 
 Usage examples:
 

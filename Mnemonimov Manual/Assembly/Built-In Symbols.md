@@ -83,23 +83,23 @@ Constants representing keyboard input codes for keys that do not use ASCII codes
 
 | Keyword | Value |
 |---------|-------|
-| `KEY_TAB` | custom key code |
-| `KEY_BACKSPACE` | custom key code |
-| `KEY_ENTER` | custom key code |
-| `KEY_ESC` | custom key code |
-| `KEY_CTRL` | custom key code |
-| `KEY_SHIFT` | custom key code |
-| `KEY_ALT` | custom key code |
-| `KEY_LEFT` | custom key code |
-| `KEY_RIGHT` | custom key code |
-| `KEY_UP` | custom key code |
+| `KEY_TAB` | `0x80` |
+| `KEY_BACKSPACE` | `0x81` |
+| `KEY_ENTER` | `0x82` |
+| `KEY_ESC` | `0x83` |
+| `KEY_CTRL` | `0x84` |
+| `KEY_SHIFT` | `0x85` |
+| `KEY_ALT` | `0x86` |
+| `KEY_LEFT` | `0x87` |
+| `KEY_RIGHT` | `0x88` |
+| `KEY_UP` | `0x89` |
 | `KEY_DOWN` | `0x8a` |
 | `KEY_INSERT` | `0x8b` |
 | `KEY_DELETE` | `0x8c` |
 | `KEY_HOME` | `0x8d` |
 | `KEY_END` | `0x8e` |
 | `KEY_PAGE_UP` | `0x8f` |
-| `KEY_PAGE_DOWN` | custom key code |
+| `KEY_PAGE_DOWN` | `0x90` |
 
 If you are looking for keyboard input codes of printable keys, see [ASCII Table](../Assembly/Types%20and%20Files.md).
 
