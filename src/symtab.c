@@ -35,7 +35,7 @@ static void scope_free(Scope *s) {
 
 static const char *const kernel_entry_names[] = {
 	"draw", "mouse_button_input", "update",
-	"input", "terminal_input", NULL
+	"input", "keyboard_input", "terminal_input", NULL
 };
 
 char *func_label_for(const char *name, int is_extern) {
