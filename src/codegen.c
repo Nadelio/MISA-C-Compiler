@@ -1075,6 +1075,9 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 				emit(cg, "syscall SYS_GET_MOUSE_POSITION");
 				emit(cg, "mov %s, a1", rn);
 				skip_a0_copy = 1;
+			} else if (sym && sym->builtin_id == BUILTIN_GET_KEYBOARD_INPUT_FLAGS) {
+				emit(cg, "mov %s, a1", rn);
+				skip_a0_copy = 1;
 			} else if (sym && sym->builtin_id != BUILTIN_NONE) {
 				const BuiltinInfo *bi = builtin_lookup(sym->builtin_id);
 				if (bi) {

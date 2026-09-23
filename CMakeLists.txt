@@ -13,6 +13,7 @@ add_executable(misacc
         src/parser.c
         src/sema.c
         src/codegen.c
+        src/asm_labels.c
         src/main.c
 )
 
@@ -24,8 +25,6 @@ target_compile_definitions(misacc PRIVATE
 )
 
 target_compile_options(misacc PRIVATE -Wall)
-
-set_target_properties(misacc PROPERTIES SUFFIX ".exe")
 
 add_custom_target(run_tests
         COMMAND cmd /c "for %f in (tests\\*.c) do $<TARGET_FILE:misacc> %f -o %~dpnf.asm"
