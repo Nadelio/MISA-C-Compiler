@@ -15,11 +15,33 @@ static void sema_error(Sema *s, AstNode *n, const char *msg) {
 	s->had_error = 1;
 }
 
+/*
+ * Checks a dotted extern name (e.g. "foo.someVar") against what the included
+ * .asm source actually states that label as. This is only called for names
+ * containing '.', if the label is not found, print a compilation error
+ */
+static void check_extern_asm_kind(Sema *s, AstNode *n, const char *name, int want_func) {
+	AsmLabelKind k;
+	if (!name || !strrchr(name, '.')) return;
+	k = asm_labels_lookup(s->asm_labels, name);
+	if (k == ASM_LABEL_UNKNOWN) return;
+	if (want_func && k == ASM_LABEL_DATA) {
+		char buf[192];
+		snprintf(buf, sizeof buf,
+			"'%s' is declared extern as a function, but is a data label in the included .asm source", name);
+		sema_error(s, n, buf);	
+	} else if (!want_func && k == ASM_LABEL_CODE) {
+		char buf[192];
+		snprintf(buf, sizeof buf,
+		    "'%s' is declared extern as a variable, but is a code label in the included .asm source", name);
+		sema_error(s, n, buf);	
+	}
+}
+
 static Type *int_type(void)   { return type_make_int(0); }
 static Type *float_type(void) { return type_make_float(); }
 static Type *ptr_type(Type *base) { return type_make_pointer(base); }
 static Type *void_type(void)  { return type_make_void(); }
-
 
 static Type *decay(Type *t) {
 	if (t && t->kind == TY_ARRAY) return type_make_pointer(t->base);
@@ -368,6 +390,7 @@ static void analyze_decl(Sema *s, AstNode *n, int is_global) {
 			if (n->u.var.is_extern) {
 				sym->is_extern = 1;
 				if (!sym->asm_label) sym->asm_label = strdup(n->u.var.name);
+				check_extern_asm_kind(s, n, n->u.var.name, 0);
 			}
 		}
 		if (n->u.var.init) analyze_expr(s, n->u.var.init);
@@ -388,6 +411,9 @@ static void analyze_decl(Sema *s, AstNode *n, int is_global) {
 				sym = symtab_define(s->symtab, n->u.func.name, SYM_FUNC, n->u.func.func_type);
 				sym->func_label = func_label_for(n->u.func.name, n->u.func.is_extern);
 			}
+			sym->is_extern = n->u.func.is_extern;
+			if (n->u.func.is_extern)
+				check_extern_asm_kind(s, n, n->u.func.name, 1);
 		}
 		break;
 	}
@@ -668,9 +694,12 @@ void sema_init(Sema *s, SymTab *st) {
 
 void sema_analyze(Sema *s, AstNode *unit) {
 	if (!unit || unit->kind != AST_TRANSLATION_UNIT) return;
+	s->asm_labels = asm_labels_scan(unit->u.unit.asm_includes, unit->u.unit.asm_include_count);
 	AstList *it = unit->u.unit.decls;
 	while (it) {
 		analyze_decl(s, it->node, 1);
 		it = it->next;
 	}
+	asm_labels_free(s->asm_labels);
+	s->asm_labels = NULL;
 }
