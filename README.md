@@ -11,6 +11,7 @@ If you are visiting on Codeberg and need the pre-compiled executables, please vi
 - Nadelio (Creator)
 - [mariusvn (Various bug fixes and feature improvements)](https://github.com/mariusvn)
 - [WillGarrison1 (`brk()` -> `break()`)](https://github.com/WillGarrison1)
+- [TDPenguin/JJRol (extern assembly parsing fixes)](https://github.com/https://github.com/TDPenguin)
 
 ## Dependencies
 - Clang (for compiling from source)
