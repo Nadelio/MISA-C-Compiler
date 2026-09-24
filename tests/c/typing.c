@@ -31,6 +31,9 @@ int selected_file = 0;
 int first_file = 0;
 char listed_filename[64];
 
+// 5x7 bitmap font
+// each byte is an encoding of a vertical column
+// bits 0-6 represent rows top-to-bottom
 unsigned char font[480] = {
 	0,0,0,0,0, 0,0,95,0,0, 0,7,0,7,0, 20,127,20,127,20,
 	36,42,127,42,18, 35,19,8,100,98, 54,73,85,34,80, 0,5,3,0,0,
@@ -267,8 +270,7 @@ void open_selected_file(void) {
 void move_cursor_up(void) {
 	int start = line_start(cursor);
 	int column = cursor - start;
-	if (start > 0)
-		cursor = position_on_line(previous_line(cursor), column);
+	if (start > 0) cursor = position_on_line(previous_line(cursor), column);
 	keep_cursor_visible();
 }
 
@@ -286,14 +288,14 @@ void draw_character(int character, int x, int y, int luma) {
 	int row;
 	int bits;
 	int offset;
-	if (character < 32 || character > 127)
-		character = '?';
+	if (character < 32 || character > 127) character = '?';
 	offset = (character - 32) * GLYPH_WIDTH;
 	for (column = 0; column < GLYPH_WIDTH; column++) {
 		bits = font[offset + column];
-		for (row = 0; row < GLYPH_HEIGHT; row++)
-			if (bits & (1 << row))
-				draw_rect(x + column, y + row, 1, 1, luma);
+		for (row = 0; row < GLYPH_HEIGHT; row++) {
+			if (bits & (1 << row)) draw_rect(x + column, y + row, 1, 1, luma);
+		}
+		yield();
 	}
 }
 
@@ -318,11 +320,20 @@ void draw_file_picker(void) {
 	}
 	while (row < FILE_ROWS && file_index < file_count) {
 		if (file_index == selected_file)
-			draw_rect(3, TEXT_Y + row * CELL_HEIGHT - 1,
-					  SCREEN_WIDTH - 6, CELL_HEIGHT, LUMA_HEADER);
+			draw_rect(
+				3,
+				TEXT_Y + row * CELL_HEIGHT - 1,
+				SCREEN_WIDTH - 6,
+				CELL_HEIGHT,
+				LUMA_HEADER
+			);
 		if (MFS.get_name(file_index, listed_filename, 64) >= 0)
-			draw_string(listed_filename, TEXT_X, TEXT_Y + row * CELL_HEIGHT,
-						file_index == selected_file ? LUMA_CURSOR : LUMA_TEXT);
+			draw_string(
+				listed_filename,
+				TEXT_X,
+				TEXT_Y + row * CELL_HEIGHT,
+				file_index == selected_file ? LUMA_CURSOR : LUMA_TEXT
+			);
 		row++;
 		file_index++;
 	}
@@ -348,8 +359,13 @@ void draw(void) {
 		draw_string("UNTITLED", 6, 4, LUMA_MUTED);
 	while (row < VISIBLE_ROWS && position <= text_length) {
 		if (position == cursor) {
-			draw_rect(TEXT_X + column * CELL_WIDTH, TEXT_Y + row * CELL_HEIGHT,
-					  1, GLYPH_HEIGHT, LUMA_CURSOR);
+			draw_rect(
+				TEXT_X + column * CELL_WIDTH,
+				TEXT_Y + row * CELL_HEIGHT,
+				1,
+				GLYPH_HEIGHT,
+				LUMA_CURSOR
+			);
 			cursor_drawn = 1;
 		}
 		if (position == text_length)
@@ -359,15 +375,24 @@ void draw(void) {
 			column = 0;
 		} else {
 			if (column < 51)
-				draw_character(text[position], TEXT_X + column * CELL_WIDTH,
-							   TEXT_Y + row * CELL_HEIGHT, LUMA_TEXT);
+				draw_character(
+					text[position],
+					TEXT_X + column * CELL_WIDTH,
+					TEXT_Y + row * CELL_HEIGHT,
+					LUMA_TEXT
+				);
 			column++;
 		}
 		position++;
 	}
 	if (!cursor_drawn && cursor == text_length && row < VISIBLE_ROWS)
-		draw_rect(TEXT_X + column * CELL_WIDTH, TEXT_Y + row * CELL_HEIGHT,
-				  1, GLYPH_HEIGHT, LUMA_CURSOR);
+		draw_rect(
+			TEXT_X + column * CELL_WIDTH,
+			TEXT_Y + row * CELL_HEIGHT,
+			1,
+			GLYPH_HEIGHT,
+			LUMA_CURSOR
+		);
 	exit();
 }
 

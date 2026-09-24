@@ -1574,6 +1574,8 @@ __L117:
 	ste i16t, -24, t1
 	jmp __L116
 __L118:
+	yield
+	mov t0, a0
 __L114:
 	mov ea, fp
 	lde i16t, t1, -20
