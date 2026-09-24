@@ -105,23 +105,10 @@ int main(void) {
 extern unsigned int foo.someVar; // foo acts as a "namespace" for the local label
 /*
 foo:
-    someVar: emb u32t 10
+    .someVar: emb u32t 10
 */
 
 int main(void) {
     return foo.someVar;
 }
 ```
-
-> [!WARNING]
-> Local functions and local variables are difficult to properly differentiate when parsing, so they are not checked to ensure they are actually a variable or a function during parsing, this made lead to undefined behavior!
-```c
-#include "foo.asm"
-
-extern void foo.someVar(); // even though this is a variable, it can be treated as a function by the compiler
-
-int main(void) {
-    foo.someVar(); // this will cause a call instruction to foo.someVar and break your program, BEWARE!
-    return 0;
-}
-``` 
