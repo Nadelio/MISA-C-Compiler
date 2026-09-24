@@ -31,4 +31,7 @@ yield_process()
 **`exit` -> Exit**
 Stops execution and terminates the active process, returning control to the kernel. Required for built-in processes once their work is complete.
 Operands: -
-Pseudocode: `exit_process()`
+Pseudocode:
+```c
+exit_process()
+````

@@ -27,14 +27,14 @@ Conditions for the `cmp` instruction:
 | `ltu`  | Less Than (U)            | `a < b`               |
 | `lteu` | Less Than Equal (U)      | `a <= b`              |
 | `gteu` | Greater Than Equal (U)   | `a >= b`              |
-| `feqa` | Float Equal Approx.      | `abs(b - a) < ε`      |
-| `fneqa`| Float Not Equal Approx.  | `abs(b - a) >= ε`     |
+| `feqa` | Float Equal Approx.      | `abs(b - a) < E`      |
+| `fneqa`| Float Not Equal Approx.  | `abs(b - a) >= E`     |
 | `flt`  | Float Less Than          | `a < b`               |
 | `fgt`  | Float Greater Than       | `a > b`               |
 | `fnan` | Float is NaN             | `is_nan(a)`           |
 | `finf` | Float is Infinity        | `is_inf(a)`           |
 
-Note: (U) is unsigned; ε is epsilon.
+Note: (U) is unsigned; E is epsilon.
 
 ---
 
