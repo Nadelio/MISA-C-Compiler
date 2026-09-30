@@ -20,7 +20,7 @@ typedef struct {
 
 /*
  * Lexer / preprocessor state.
- * Handles tokenizing C89 source with basic preprocessing.
+ * Handles tokenizing C99 source with basic preprocessing.
  */
 typedef struct {
 	const char *src;        /* source text */

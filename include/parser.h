@@ -6,7 +6,7 @@
 #include "symtab.h"
 
 /*
- * Recursive-descent parser for C89.
+ * Recursive-descent parser for C99.
  */
 typedef struct {
 	Lexer   *lexer;

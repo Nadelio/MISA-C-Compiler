@@ -137,7 +137,7 @@ jobs:
           body: |
             ## MISA C Compiler — Build #${{ github.run_number }}
 
-            A C89 compiler that targets the MISA/Mnemonimov VM architecture.
+            A C99 compiler that targets the MISA/Mnemonimov VM architecture.
 
             ---
 
@@ -153,7 +153,7 @@ jobs:
 
             | Argument | Description |
             |---|---|
-            | `<input.c>` | C89 source file to compile (required) |
+            | `<input.c>` | C99 source file to compile (required) |
             | `-o output.misa` | Write output to a file instead of stdout |
             | `--doc`/`-gd` | Generate doc comments in output (See: [Doc Comment Format](https://github.com/Nadelio/MISA-C-Compiler/blob/main/Mnemonimov%20Manual/Doc%20Comment%20Format.md)) |
             | `-isystem <dir>` | Override the system include search directory for `<...>` includes |

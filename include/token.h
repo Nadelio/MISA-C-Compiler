@@ -2,7 +2,7 @@
 #define TOKEN_H
 
 /*
- * Token types for C89.
+ * Token types for C99.
  */
 typedef enum {
 	/* Literals */
