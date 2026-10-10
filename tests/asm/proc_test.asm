@@ -37,5 +37,6 @@ sbmk "main_(): void"
 ## Returns: NONE
 ## Additional Implementation Notes:
 main_:
+	mov a0, 0
 	ret
 

@@ -107,6 +107,37 @@ sbmk "main_(): i16t"
 ## Additional Implementation Notes:
 main_:
 	sub sp, 16
+	mov t0, zr
+	add t1, fp, -12
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -11
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -10
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -9
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -8
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -7
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -6
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -5
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -4
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -3
+	mov ea, t1
+	ste u8t, 0, t0
 	mov t0, 1
 	add t1, fp, -12
 	mov ea, t1
@@ -121,10 +152,6 @@ main_:
 	ste i16t, 0, t0
 	mov t0, 3
 	add t1, fp, -6
-	mov ea, t1
-	ste i16t, 0, t0
-	mov t0, zr
-	add t1, fp, -4
 	mov ea, t1
 	ste i16t, 0, t0
 	tpa t1, __str_5
@@ -172,5 +199,8 @@ main_:
 
 g__global_x:	emb i16t 100
 g__greeting:	res u32t 1, 0
-g__foo:	emb i8t 0, 1, 0
+g__foo:
+	emb i8t 0
+	emb i8t 1
+	res u8t 1, 0
 __str_5:	emb string "hello"

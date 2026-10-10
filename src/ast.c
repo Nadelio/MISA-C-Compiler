@@ -39,6 +39,7 @@ void ast_list_free(AstList *list) {
 
 void ast_free(AstNode *n) {
 	if (!n) return;
+	free(n->complex_storage_name);
 	switch (n->kind) {
 	case AST_TRANSLATION_UNIT: {
 		ast_list_free(n->u.unit.decls);
@@ -161,6 +162,15 @@ void ast_free(AstNode *n) {
 		break;
 	case AST_INIT_LIST:
 		ast_list_free(n->u.init_list.items);
+		break;
+	case AST_DESIGNATED_INIT:
+		ast_free(n->u.designated_init.index);
+		free(n->u.designated_init.member_name);
+		ast_free(n->u.designated_init.value);
+		break;
+	case AST_COMPOUND_LITERAL:
+		ast_free(n->u.compound_literal.init);
+		free(n->u.compound_literal.storage_name);
 		break;
 	default:
 		break;

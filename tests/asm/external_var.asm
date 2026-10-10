@@ -24,6 +24,7 @@ main_:
 	mov t1, 5
 	str u32t, player2.y, t1
 	mov t0, t1
+	mov a0, 0
 	ret
 
 

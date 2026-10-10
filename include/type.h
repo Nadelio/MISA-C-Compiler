@@ -18,6 +18,7 @@ typedef enum {
 	TY_ULONG,   /* unsigned 32-bit */
 	TY_FLOAT,   /* 32-bit float */
 	TY_DOUBLE,  /* mapped to float on MISA */
+	TY_COMPLEX, /* pair of 32-bit real and imaginary components */
 	TY_POINTER, /* 32-bit address */
 	TY_ARRAY,
 	TY_STRUCT,
@@ -38,6 +39,9 @@ struct TypeMember {
 	char        *name;
 	Type        *type;
 	int          offset;    /* byte offset within the struct/union */
+	int          is_bit_field;
+	int          bit_width;
+	int          bit_offset;
 	TypeMember  *next;
 };
 
@@ -54,10 +58,12 @@ struct Type {
 	TypeKind     kind;
 	int          is_const;
 	int          is_volatile;
+	int          is_restrict;
 
 	/* TY_POINTER | TY_ARRAY: element / base type */
 	Type        *base;
 	int          array_len;  /* -1 = incomplete array */
+	struct AstNode *vla_size;
 
 	/* TY_STRUCT | TY_UNION */
 	char        *tag;
@@ -67,6 +73,7 @@ struct Type {
 	/* TY_FUNCTION */
 	TypeParam   *params;
 	int          is_variadic;
+	int          has_prototype;
 
 	/* TY_TYPEDEF_REF */
 	char        *typedef_name;
@@ -86,8 +93,10 @@ Type *type_make_int(int is_unsigned);
 Type *type_make_long(int is_unsigned);
 Type *type_make_float(void);
 Type *type_make_double(void);
+Type *type_make_complex(Type *real_type);
 Type *type_make_pointer(Type *base);
 Type *type_make_array(Type *base, int len);
+Type *type_make_vla(Type *base, struct AstNode *size_expr);
 Type *type_make_function(Type *ret, TypeParam *params, int is_variadic);
 Type *type_make_struct(const char *tag);
 Type *type_make_union(const char *tag);
@@ -99,12 +108,15 @@ void  type_free(Type *t);
 int type_is_integer(const Type *t);
 int type_is_unsigned(const Type *t);
 int type_is_float(const Type *t);
+int type_is_complex(const Type *t);
 int type_is_arithmetic(const Type *t);
 int type_is_pointer(const Type *t);
 int type_is_scalar(const Type *t);
 int type_is_complete(const Type *t);
+int type_is_variably_modified(const Type *t);
 int type_is_compatible(const Type *a, const Type *b);
 int type_equals(const Type *a, const Type *b);
+int type_declaration_compatible(const Type *a, const Type *b);
 
 /* Size / alignment */
 int type_sizeof(const Type *t);   /* returns byte size */

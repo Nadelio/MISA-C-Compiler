@@ -31,9 +31,11 @@ typedef enum {
 	TOK_KW_FOR,
 	TOK_KW_GOTO,
 	TOK_KW_IF,
+	TOK_KW_INLINE,
 	TOK_KW_INT,
 	TOK_KW_LONG,
 	TOK_KW_REGISTER,
+	TOK_KW_RESTRICT,
 	TOK_KW_RETURN,
 	TOK_KW_SHORT,
 	TOK_KW_SIGNED,
@@ -47,6 +49,8 @@ typedef enum {
 	TOK_KW_VOID,
 	TOK_KW_VOLATILE,
 	TOK_KW_WHILE,
+	TOK_KW_BOOL,
+	TOK_KW_COMPLEX,
 
 	/* Punctuation / operators */
 	TOK_PLUS,          /* +  */
@@ -115,6 +119,10 @@ typedef struct {
 		long long    ival; /* TOK_LIT_INT / TOK_LIT_CHAR */
 		double       fval; /* TOK_LIT_FLOAT */
 	} u;
+	int          number_base;       /* integer literal radix */
+	int          has_unsigned_suffix;
+	int          has_long_suffix;
+	int          has_float_suffix;
 	char        *doc_brief;   /* from /// @brief */
 	char        *doc_details; /* from /// @details */
 	char       **doc_param_names; /* from /// @param: parameter names (owned array) */

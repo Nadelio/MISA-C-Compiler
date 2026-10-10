@@ -2,7 +2,9 @@
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <time.h>
 #include "lexer.h"
+#include "target.h"
 
 #define MACRO_INIT_CAP 16
 
@@ -197,6 +199,10 @@ static Token make_token(TokenType type, const char *text, int line, int col) {
 
 static TokenType keyword_type(const char *s) {
 	switch (s[0]) {
+	case '_':
+		if (!strcmp(s, "_Bool"))    return TOK_KW_BOOL;
+		if (!strcmp(s, "_Complex")) return TOK_KW_COMPLEX;
+		break;
 	case 'a':
 		if (!strcmp(s, "auto"))     return TOK_KW_AUTO;
 		break;
@@ -228,6 +234,7 @@ static TokenType keyword_type(const char *s) {
 		break;
 	case 'i':
 		if (!strcmp(s, "if"))       return TOK_KW_IF;
+		if (!strcmp(s, "inline"))   return TOK_KW_INLINE;
 		if (!strcmp(s, "int"))      return TOK_KW_INT;
 		break;
 	case 'l':
@@ -235,6 +242,7 @@ static TokenType keyword_type(const char *s) {
 		break;
 	case 'r':
 		if (!strcmp(s, "register")) return TOK_KW_REGISTER;
+		if (!strcmp(s, "restrict")) return TOK_KW_RESTRICT;
 		if (!strcmp(s, "return"))   return TOK_KW_RETURN;
 		break;
 	case 's':
@@ -313,6 +321,9 @@ static Token lex_number(Lexer *l, int start_line, int start_col) {
 	int    i = 0;
 	int    is_float = 0;
 	int    base = 10;
+	int    has_unsigned_suffix = 0;
+	int    has_long_suffix = 0;
+	int    has_float_suffix = 0;
 
 	if (peek_ch(l) == '0' && (peek_ch2(l) == 'x' || peek_ch2(l) == 'X')) {
 		buf[i++] = advance_ch(l);
@@ -320,18 +331,40 @@ static Token lex_number(Lexer *l, int start_line, int start_col) {
 		base = 16;
 		while (l->pos < l->len && isxdigit((unsigned char)peek_ch(l)))
 			buf[i++] = advance_ch(l);
+		if (peek_ch(l) == '.') {
+			is_float = 1;
+			buf[i++] = advance_ch(l);
+			while (l->pos < l->len && isxdigit((unsigned char)peek_ch(l)))
+				buf[i++] = advance_ch(l);
+		}
+		if (peek_ch(l) == 'p' || peek_ch(l) == 'P') {
+			is_float = 1;
+			buf[i++] = advance_ch(l);
+			if (peek_ch(l) == '+' || peek_ch(l) == '-') buf[i++] = advance_ch(l);
+			while (l->pos < l->len && isdigit((unsigned char)peek_ch(l)))
+				buf[i++] = advance_ch(l);
+		}
 	} else if (peek_ch(l) == '0' && (peek_ch2(l) == 'b' || peek_ch2(l) == 'B')) {
 		advance_ch(l); advance_ch(l); 
 		base = 2;
 		while (l->pos < l->len && (peek_ch(l) == '0' || peek_ch(l) == '1'))
 			buf[i++] = advance_ch(l);
 	} else {
+		if (peek_ch(l) == '0') base = 8;
 		while (l->pos < l->len && isdigit((unsigned char)peek_ch(l)))
 			buf[i++] = advance_ch(l);
-		if (l->pos < l->len && peek_ch(l) == '.' &&
-		    l->pos+1 < l->len && isdigit((unsigned char)l->src[l->pos+1])) {
+		if (l->pos < l->len && peek_ch(l) == '.') {
 			is_float = 1;
+			base = 10;
 			buf[i++] = advance_ch(l);
+			while (l->pos < l->len && isdigit((unsigned char)peek_ch(l)))
+				buf[i++] = advance_ch(l);
+		}
+		if (peek_ch(l) == 'e' || peek_ch(l) == 'E') {
+			is_float = 1;
+			base = 10;
+			buf[i++] = advance_ch(l);
+			if (peek_ch(l) == '+' || peek_ch(l) == '-') buf[i++] = advance_ch(l);
 			while (l->pos < l->len && isdigit((unsigned char)peek_ch(l)))
 				buf[i++] = advance_ch(l);
 		}
@@ -340,16 +373,40 @@ static Token lex_number(Lexer *l, int start_line, int start_col) {
 	while (l->pos < l->len && (peek_ch(l) == 'L' || peek_ch(l) == 'l' ||
 	       peek_ch(l) == 'U' || peek_ch(l) == 'u' || peek_ch(l) == 'f' || peek_ch(l) == 'F')) {
 		char suf = advance_ch(l);
-		if (suf == 'f' || suf == 'F') is_float = 1;
+		if (suf == 'f' || suf == 'F') {
+			is_float = 1;
+			has_float_suffix = 1;
+		} else if (suf == 'u' || suf == 'U') {
+			has_unsigned_suffix++;
+		} else {
+			has_long_suffix++;
+		}
 	}
 	buf[i] = '\0';
 
 	Token t = make_token(is_float ? TOK_LIT_FLOAT : TOK_LIT_INT, buf, start_line, start_col);
+	t.number_base = base;
+	t.has_unsigned_suffix = has_unsigned_suffix;
+	t.has_long_suffix = has_long_suffix;
+	t.has_float_suffix = has_float_suffix;
+	if (has_unsigned_suffix > 1 || has_long_suffix > 1 ||
+	    (is_float && has_unsigned_suffix) || (is_float && has_long_suffix) ||
+	    (!is_float && has_float_suffix)) {
+		fprintf(stderr, "%d:%d: error: invalid numeric literal suffix\n",
+		    start_line, start_col);
+		l->had_error = 1;
+	}
 	if (is_float) {
-		t.u.fval = atof(buf);
+		t.u.fval = strtod(buf, NULL);
 	} else {
 		char *end;
-		t.u.ival = (long long)strtoull(buf, &end, base);
+		unsigned long long value = strtoull(buf, &end, base);
+		if (value > MISA_ULONG_MAX) {
+			fprintf(stderr, "%d:%d: error: integer literal is too large for the target\n",
+			    start_line, start_col);
+			l->had_error = 1;
+		}
+		t.u.ival = (long long)value;
 	}
 	return t;
 }
@@ -363,7 +420,31 @@ static struct MacroDef *lookup_macro_def(Lexer *l, const char *name) {
 
 static const char *lookup_macro(Lexer *l, const char *name) {
 	struct MacroDef *m = lookup_macro_def(l, name);
+	if (!strcmp(name, "__STDC__")) return "1";
+	if (!strcmp(name, "__STDC_VERSION__")) return "199901L";
+	if (!strcmp(name, "__STDC_HOSTED__")) return "0";
+	if (!strcmp(name, "__LINE__") || !strcmp(name, "__FILE__") ||
+	    !strcmp(name, "__DATE__") || !strcmp(name, "__TIME__")) return "1";
 	return m ? m->body : NULL;
+}
+
+static int splice_lines(char *src, int len) {
+	int read_pos = 0;
+	int write_pos = 0;
+	while (read_pos < len) {
+		if (src[read_pos] == '\\' && read_pos + 1 < len && src[read_pos + 1] == '\n') {
+			read_pos += 2;
+			continue;
+		}
+		if (src[read_pos] == '\\' && read_pos + 2 < len &&
+		    src[read_pos + 1] == '\r' && src[read_pos + 2] == '\n') {
+			read_pos += 3;
+			continue;
+		}
+		src[write_pos++] = src[read_pos++];
+	}
+	src[write_pos] = '\0';
+	return write_pos;
 }
 
 static void collect_asm_deps(Lexer *l, const char *asm_path);
@@ -736,7 +817,7 @@ static void handle_directive(Lexer *l) {
 				while (l->pos < l->len && l->src[l->pos] == ' ') l->pos++;
 				if (l->pos < l->len && l->src[l->pos] == ')') break;
 				if (l->pos+2 < l->len && l->src[l->pos]=='.'&&l->src[l->pos+1]=='.'&&l->src[l->pos+2]=='.') {
-					if (nfp < 64) fparams[nfp++] = strdup("..."); l->pos += 3; break;
+					if (nfp < 64) fparams[nfp++] = strdup("__VA_ARGS__"); l->pos += 3; break;
 				}
 				while (l->pos < l->len && is_ident_body(l->src[l->pos]) && pi < 63)
 					pn[pi++] = l->src[l->pos++];
@@ -898,6 +979,7 @@ static void handle_directive(Lexer *l) {
 						fread(fbuf, 1, fsz, f2);
 						fbuf[fsz] = '\0';
 						fclose(f2);
+						fsz = splice_lines(fbuf, (int)fsz);
 						
 						if (l->include_depth >= l->include_cap) {
 							l->include_cap = l->include_cap ? l->include_cap * 2 : 8;
@@ -1007,15 +1089,51 @@ static void handle_directive(Lexer *l) {
 		return;
 	} else if (!strcmp(name, "endif")) {
 		if (l->cond_depth > 0) l->cond_depth--;
+	} else if (!strcmp(name, "line")) {
+		char *end;
+		long requested;
+		while (l->pos < l->len && (l->src[l->pos] == ' ' || l->src[l->pos] == '\t')) l->pos++;
+		requested = strtol(l->src + l->pos, &end, 10);
+		if (end != l->src + l->pos && requested > 0) {
+			l->pos = (int)(end - l->src);
+			l->line = (int)requested - 1;
+			while (l->pos < l->len && (l->src[l->pos] == ' ' || l->src[l->pos] == '\t')) l->pos++;
+			if (l->pos < l->len && l->src[l->pos] == '"') {
+				char filename[512];
+				int fi = 0;
+				l->pos++;
+				while (l->pos < l->len && l->src[l->pos] != '"' &&
+				       l->src[l->pos] != '\n' && fi < 511)
+					filename[fi++] = l->src[l->pos++];
+				filename[fi] = '\0';
+				if (l->filename_owned) free((char *)l->filename);
+				l->filename = strdup(filename);
+				l->filename_owned = 1;
+			}
+		}
+	} else if (!strcmp(name, "error")) {
+		char message[512];
+		int mi = 0;
+		while (l->pos < l->len && (l->src[l->pos] == ' ' || l->src[l->pos] == '\t')) l->pos++;
+		while (l->pos < l->len && l->src[l->pos] != '\n' && mi < 511)
+			message[mi++] = l->src[l->pos++];
+		message[mi] = '\0';
+		fprintf(stderr, "%s:%d: error: #error %s\n",
+		    l->filename ? l->filename : "<input>", l->line, message);
+		l->had_error = 1;
 	}
 
 	while (l->pos < l->len && l->src[l->pos] != '\n') l->pos++;
 }
 
 void lexer_init(Lexer *l, const char *src, int len, const char *filename) {
+	char *translated = (char *)malloc(len + 1);
 	memset(l, 0, sizeof(*l));
-	l->src      = src;
-	l->len      = len;
+	memcpy(translated, src, len);
+	translated[len] = '\0';
+	l->len      = splice_lines(translated, len);
+	l->src      = translated;
+	l->owned_buf = translated;
 	l->filename = filename;
 	l->line     = 1;
 	l->col      = 1;
@@ -1115,6 +1233,48 @@ static Token lex_one(Lexer *l) {
 		buf[i] = '\0';
 		TokenType kw = keyword_type(buf);
 		Token t = make_token(kw, buf, sl, sc);
+		if (!strcmp(buf, "__LINE__")) {
+			t.type = TOK_LIT_INT;
+			t.u.ival = sl;
+			return t;
+		}
+		if (!strcmp(buf, "__FILE__")) {
+			free(t.text);
+			return make_token(TOK_LIT_STRING, l->filename ? l->filename : "", sl, sc);
+		}
+		if (!strcmp(buf, "__DATE__") || !strcmp(buf, "__TIME__")) {
+			char value[32];
+			time_t now = time(NULL);
+			struct tm *local = localtime(&now);
+			if (!strcmp(buf, "__DATE__")) strftime(value, sizeof(value), "%b %d %Y", local);
+			else strftime(value, sizeof(value), "%H:%M:%S", local);
+			free(t.text);
+			return make_token(TOK_LIT_STRING, value, sl, sc);
+		}
+		if (!strcmp(buf, "_Pragma")) {
+			free(t.text);
+			while (l->pos < l->len && (l->src[l->pos] == ' ' || l->src[l->pos] == '\t')) advance_ch(l);
+			if (l->pos < l->len && l->src[l->pos] == '(') advance_ch(l);
+			while (l->pos < l->len && (l->src[l->pos] == ' ' || l->src[l->pos] == '\t')) advance_ch(l);
+			if (l->pos < l->len && l->src[l->pos] == '"') {
+				advance_ch(l);
+				while (l->pos < l->len && l->src[l->pos] != '"') {
+					if (l->src[l->pos] == '\\' && l->pos + 1 < l->len) advance_ch(l);
+					advance_ch(l);
+				}
+				if (l->pos < l->len) advance_ch(l);
+			}
+			while (l->pos < l->len && (l->src[l->pos] == ' ' || l->src[l->pos] == '\t')) advance_ch(l);
+			if (l->pos < l->len && l->src[l->pos] == ')') advance_ch(l);
+			return lex_one(l);
+		}
+		if (!strcmp(buf, "__STDC__") || !strcmp(buf, "__STDC_HOSTED__") ||
+		    !strcmp(buf, "__STDC_VERSION__")) {
+			t.type = TOK_LIT_INT;
+			t.u.ival = !strcmp(buf, "__STDC_VERSION__") ? 199901 :
+			    (!strcmp(buf, "__STDC__") ? 1 : 0);
+			return t;
+		}
 		
 		if (kw == TOK_IDENT) {
 			struct MacroDef *mdef = lookup_macro_def(l, buf);
@@ -1129,6 +1289,23 @@ static Token lex_one(Lexer *l) {
 						char *ebuf;
 						advance_ch(l);
 						neargs = collect_macro_args(l, eargs, 64);
+						if (mdef->param_count > 0 &&
+						    !strcmp(mdef->params[mdef->param_count - 1], "__VA_ARGS__") &&
+						    neargs >= mdef->param_count) {
+							int fixed = mdef->param_count - 1;
+							int total = 1;
+							char *joined;
+							for (k = fixed; k < neargs; k++) total += (int)strlen(eargs[k]) + 1;
+							joined = (char *)malloc(total);
+							joined[0] = '\0';
+							for (k = fixed; k < neargs; k++) {
+								if (k > fixed) strcat(joined, ",");
+								strcat(joined, eargs[k]);
+							}
+							for (k = fixed; k < neargs; k++) free(eargs[k]);
+							eargs[fixed] = joined;
+							neargs = mdef->param_count;
+						}
 						use  = neargs < mdef->param_count ? neargs : mdef->param_count;
 						ebuf = substitute_params(mdef->body, mdef->params, eargs, use);
 						for (k = 0; k < neargs; k++) free(eargs[k]);

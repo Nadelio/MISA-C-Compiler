@@ -3,12 +3,79 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include "sema.h"
+#include "target.h"
 
 static void  analyze_decl(Sema *s, AstNode *n, int is_global);
 static void  analyze_func(Sema *s, AstNode *n);
 static void  analyze_stmt(Sema *s, AstNode *n);
 static Type *analyze_expr(Sema *s, AstNode *n);
 static Type *analyze_lvalue(Sema *s, AstNode *n);
+static AstNode *normalize_initializer(Type *type, AstNode *init);
+static void validate_initializer(Sema *s, Type *type, AstNode *init);
+
+int sema_eval_integer_constant(SymTab *symtab, AstNode *n, long long *out) {
+	long long left, right;
+	Symbol *sym;
+	if (!n || !out) return 0;
+	switch (n->kind) {
+	case AST_INT_LIT:
+	case AST_CHAR_LIT:
+		*out = n->u.int_lit.value;
+		return 1;
+	case AST_IDENT:
+		sym = symtab_lookup(symtab, n->u.ident.name);
+		if (sym && sym->kind == SYM_ENUM_CONST) { *out = sym->enum_value; return 1; }
+		return 0;
+	case AST_UNARY_PRE:
+		if (!sema_eval_integer_constant(symtab, n->u.unary.operand, &right)) return 0;
+		switch (n->u.unary.op) {
+		case TOK_PLUS: *out = right; return 1;
+		case TOK_MINUS: *out = -right; return 1;
+		case TOK_TILDE: *out = ~right; return 1;
+		case TOK_BANG: *out = !right; return 1;
+		default: return 0;
+		}
+	case AST_BINARY:
+		if (!sema_eval_integer_constant(symtab, n->u.binary.left, &left) ||
+		    !sema_eval_integer_constant(symtab, n->u.binary.right, &right)) return 0;
+		switch (n->u.binary.op) {
+		case TOK_PLUS: *out = left + right; return 1;
+		case TOK_MINUS: *out = left - right; return 1;
+		case TOK_STAR: *out = left * right; return 1;
+		case TOK_SLASH: if (!right) return 0; *out = left / right; return 1;
+		case TOK_PERCENT: if (!right) return 0; *out = left % right; return 1;
+		case TOK_LSHIFT: *out = left << right; return 1;
+		case TOK_RSHIFT: *out = left >> right; return 1;
+		case TOK_AMPERSAND: *out = left & right; return 1;
+		case TOK_PIPE: *out = left | right; return 1;
+		case TOK_CARET: *out = left ^ right; return 1;
+		case TOK_EQ_EQ: *out = left == right; return 1;
+		case TOK_BANG_EQ: *out = left != right; return 1;
+		case TOK_LT: *out = left < right; return 1;
+		case TOK_GT: *out = left > right; return 1;
+		case TOK_LT_EQ: *out = left <= right; return 1;
+		case TOK_GT_EQ: *out = left >= right; return 1;
+		case TOK_AMP_AMP: *out = left && right; return 1;
+		case TOK_PIPE_PIPE: *out = left || right; return 1;
+		default: return 0;
+		}
+	case AST_TERNARY:
+		if (!sema_eval_integer_constant(symtab, n->u.ternary.cond, &left)) return 0;
+		return sema_eval_integer_constant(symtab,
+		    left ? n->u.ternary.then_expr : n->u.ternary.else_expr, out);
+	case AST_CAST:
+		return sema_eval_integer_constant(symtab, n->u.cast.expr, out);
+	case AST_SIZEOF_TYPE:
+		*out = type_sizeof(n->u.sizeof_type.sizeof_type);
+		return 1;
+	case AST_SIZEOF_EXPR:
+		if (!n->u.sizeof_expr.sizeof_expr || !n->u.sizeof_expr.sizeof_expr->type) return 0;
+		*out = type_sizeof(n->u.sizeof_expr.sizeof_expr->type);
+		return 1;
+	default:
+		return 0;
+	}
+}
 
 static void sema_error(Sema *s, AstNode *n, const char *msg) {
 	fprintf(stderr, "%d: error: %s\n", n ? n->line : 0, msg);
@@ -43,6 +110,24 @@ static Type *float_type(void) { return type_make_float(); }
 static Type *ptr_type(Type *base) { return type_make_pointer(base); }
 static Type *void_type(void)  { return type_make_void(); }
 
+static Type *integer_literal_type(const AstNode *n) {
+	unsigned long long value = (unsigned long long)n->u.int_lit.value;
+	int decimal = n->u.int_lit.base == 10;
+	if (n->u.int_lit.has_long_suffix) {
+		if (n->u.int_lit.has_unsigned_suffix || value > MISA_LONG_MAX)
+			return type_make_long(1);
+		return type_make_long(0);
+	}
+	if (n->u.int_lit.has_unsigned_suffix) {
+		if (value <= MISA_UINT_MAX) return type_make_int(1);
+		return type_make_long(1);
+	}
+	if (value <= MISA_INT_MAX) return type_make_int(0);
+	if (!decimal && value <= MISA_UINT_MAX) return type_make_int(1);
+	if (value <= MISA_LONG_MAX) return type_make_long(0);
+	return type_make_long(1);
+}
+
 static Type *decay(Type *t) {
 	if (t && t->kind == TY_ARRAY) return type_make_pointer(t->base);
 	if (t && t->kind == TY_FUNCTION) return type_make_pointer(t);
@@ -55,10 +140,10 @@ static Type *analyze_expr(Sema *s, AstNode *n) {
 
 	switch (n->kind) {
 	case AST_INT_LIT:
-		t = int_type();
+		t = integer_literal_type(n);
 		break;
 	case AST_FLOAT_LIT:
-		t = float_type();
+		t = n->u.float_lit.has_float_suffix ? float_type() : type_make_double();
 		break;
 	case AST_CHAR_LIT:
 		t = type_make_char(0);
@@ -90,10 +175,10 @@ static Type *analyze_expr(Sema *s, AstNode *n) {
 		ot = decay(ot);
 		switch (n->u.unary.op) {
 		case TOK_MINUS: case TOK_PLUS:
-			t = type_is_float(ot) ? float_type() : int_type();
+			t = type_is_complex(ot) || type_is_float(ot) ? ot : type_promote_integer(ot);
 			break;
 		case TOK_TILDE:
-			t = int_type();
+			t = type_promote_integer(ot);
 			break;
 		case TOK_BANG:
 			t = int_type();
@@ -103,6 +188,8 @@ static Type *analyze_expr(Sema *s, AstNode *n) {
 			n->is_lvalue = 0;
 			break;
 		case TOK_AMPERSAND:
+			if (n->u.unary.operand && n->u.unary.operand->is_bit_field)
+				sema_error(s, n, "cannot take the address of a bit-field");
 			t = ptr_type(ot);
 			break;
 		case TOK_STAR:
@@ -132,8 +219,14 @@ static Type *analyze_expr(Sema *s, AstNode *n) {
 		Type *rt = decay(analyze_expr(s, n->u.binary.right));
 		switch (n->u.binary.op) {
 		case TOK_EQ_EQ: case TOK_BANG_EQ:
+			t = int_type();
+			break;
 		case TOK_LT:    case TOK_GT:
 		case TOK_LT_EQ: case TOK_GT_EQ:
+			if (type_is_complex(lt) || type_is_complex(rt))
+				sema_error(s, n, "ordering comparison is invalid for complex operands");
+			t = int_type();
+			break;
 		case TOK_AMP_AMP: case TOK_PIPE_PIPE:
 			t = int_type();
 			break;
@@ -147,8 +240,10 @@ static Type *analyze_expr(Sema *s, AstNode *n) {
 			}
 			break;
 		case TOK_AMPERSAND: case TOK_PIPE: case TOK_CARET:
+			t = type_usual_arithmetic(lt, rt);
+			break;
 		case TOK_LSHIFT:    case TOK_RSHIFT:
-			t = int_type();
+			t = type_promote_integer(lt);
 			break;
 		default:
 			t = type_usual_arithmetic(lt, rt);
@@ -228,6 +323,7 @@ static Type *analyze_expr(Sema *s, AstNode *n) {
 				if (m->name && !strcmp(m->name, n->u.member.member_name)) {
 					t = m->type;
 					n->is_lvalue = 1;
+					n->is_bit_field = m->is_bit_field;
 					break;
 				}
 				m = m->next;
@@ -265,6 +361,7 @@ static Type *analyze_expr(Sema *s, AstNode *n) {
 				if (m->name && !strcmp(m->name, n->u.member.member_name)) {
 					t = m->type;
 					n->is_lvalue = 1;
+					n->is_bit_field = m->is_bit_field;
 					break;
 				}
 				m = m->next;
@@ -289,12 +386,50 @@ static Type *analyze_expr(Sema *s, AstNode *n) {
 		t = int_type();
 		break;
 	}
+	case AST_DESIGNATED_INIT:
+		if (n->u.designated_init.index) {
+			analyze_expr(s, n->u.designated_init.index);
+			if (!sema_eval_integer_constant(s->symtab, n->u.designated_init.index,
+			    &n->u.designated_init.index_value) || n->u.designated_init.index_value < 0)
+				sema_error(s, n, "array designator requires a nonnegative integer constant");
+			else
+				n->u.designated_init.has_index_value = 1;
+		}
+		t = analyze_expr(s, n->u.designated_init.value);
+		break;
+	case AST_COMPOUND_LITERAL:
+		n->u.compound_literal.init = normalize_initializer(
+		    n->u.compound_literal.literal_type, n->u.compound_literal.init);
+		analyze_expr(s, n->u.compound_literal.init);
+		t = n->u.compound_literal.literal_type;
+		if (t && t->kind == TY_ARRAY && t->array_len < 0 &&
+		    n->u.compound_literal.init && n->u.compound_literal.init->kind == AST_INIT_LIST) {
+			int next_index = 0;
+			int required_len = 0;
+			AstList *item;
+			for (item = n->u.compound_literal.init->u.init_list.items; item; item = item->next) {
+				AstNode *init = item->node;
+				if (init->kind == AST_DESIGNATED_INIT && init->u.designated_init.has_index_value)
+					next_index = (int)init->u.designated_init.index_value;
+				if (next_index + 1 > required_len) required_len = next_index + 1;
+				next_index++;
+			}
+			t->array_len = required_len;
+		}
+		if (t && (t->kind == TY_ARRAY || t->kind == TY_STRUCT || t->kind == TY_UNION) &&
+		    (!n->u.compound_literal.init || n->u.compound_literal.init->kind != AST_INIT_LIST))
+			sema_error(s, n, "aggregate compound literal requires a brace initializer");
+		validate_initializer(s, t, n->u.compound_literal.init);
+		n->is_lvalue = 1;
+		break;
 	default:
 		t = int_type();
 	}
 
 	if (!t) t = int_type();
 	n->type = t;
+	n->is_integer_constant = sema_eval_integer_constant(s->symtab, n,
+	    &n->integer_constant);
 	return t;
 }
 
@@ -355,6 +490,8 @@ static void analyze_stmt(Sema *s, AstNode *n) {
 		break;
 	case AST_CASE:
 		analyze_expr(s, n->u.case_stmt.expr);
+		if (!n->u.case_stmt.expr->is_integer_constant)
+			sema_error(s, n, "case label is not an integer constant expression");
 		analyze_stmt(s, n->u.case_stmt.stmt);
 		break;
 	case AST_DEFAULT:
@@ -377,16 +514,273 @@ static void analyze_stmt(Sema *s, AstNode *n) {
 	}
 }
 
+static int initializer_type_is_aggregate(Type *type) {
+	return type && (type->kind == TY_ARRAY || type->kind == TY_STRUCT ||
+	    type->kind == TY_UNION);
+}
+
+static AstNode *normalize_initializer(Type *type, AstNode *init);
+
+static AstNode *consume_initializer_object(Type *type, AstList **cursor, int line) {
+	AstNode *node;
+	AstList *entry;
+	if (!cursor || !*cursor) return NULL;
+	if (initializer_type_is_aggregate(type) &&
+	    !(type->kind == TY_ARRAY && (*cursor)->node->kind == AST_STRING_LIT)) {
+		if ((*cursor)->node->kind == AST_INIT_LIST) {
+			entry = *cursor;
+			*cursor = entry->next;
+			node = entry->node;
+			free(entry);
+			return normalize_initializer(type, node);
+		}
+		node = ast_new(AST_INIT_LIST, line);
+		if (type->kind == TY_ARRAY) {
+			int index = 0;
+			while (*cursor && (type->array_len < 0 || index < type->array_len)) {
+				AstNode *child = consume_initializer_object(type->base, cursor, line);
+				if (!child) break;
+				node->u.init_list.items = ast_list_append(node->u.init_list.items, child);
+				index++;
+			}
+		} else {
+			TypeMember *member;
+			for (member = type->members; member && *cursor; member = member->next) {
+				AstNode *child;
+				if (!member->name) continue;
+				child = consume_initializer_object(member->type, cursor, line);
+				if (!child) break;
+				node->u.init_list.items = ast_list_append(node->u.init_list.items, child);
+				if (type->kind == TY_UNION) break;
+			}
+		}
+		return node;
+	}
+	entry = *cursor;
+	*cursor = entry->next;
+	node = entry->node;
+	free(entry);
+	return node;
+}
+
+static AstNode *normalize_initializer(Type *type, AstNode *init) {
+	AstList *item;
+	AstList *cursor;
+	AstList *normalized = NULL;
+	if (!initializer_type_is_aggregate(type) || !init || init->kind != AST_INIT_LIST)
+		return init;
+	for (item = init->u.init_list.items; item; item = item->next)
+		if (item->node && item->node->kind == AST_DESIGNATED_INIT) return init;
+	cursor = init->u.init_list.items;
+	init->u.init_list.items = NULL;
+	if (type->kind == TY_ARRAY) {
+		int index = 0;
+		while (cursor && (type->array_len < 0 || index < type->array_len)) {
+			AstNode *child = consume_initializer_object(type->base, &cursor, init->line);
+			if (!child) break;
+			normalized = ast_list_append(normalized, child);
+			index++;
+		}
+	} else {
+		TypeMember *member;
+		for (member = type->members; member && cursor; member = member->next) {
+			AstNode *child;
+			if (!member->name) continue;
+			child = consume_initializer_object(member->type, &cursor, init->line);
+			if (!child) break;
+			normalized = ast_list_append(normalized, child);
+			if (type->kind == TY_UNION) break;
+		}
+	}
+	if (cursor) {
+		AstList *tail = normalized;
+		if (!tail) normalized = cursor;
+		else {
+			while (tail->next) tail = tail->next;
+			tail->next = cursor;
+		}
+	}
+	init->u.init_list.items = normalized;
+	return init;
+}
+
+static void validate_initializer(Sema *s, Type *type, AstNode *init) {
+	if (!type || !init) return;
+	if (init->kind == AST_STRING_LIT) {
+		if (type->kind == TY_ARRAY) {
+			int string_len = (int)strlen(init->u.str_lit.value);
+			if (!type->base || (type->base->kind != TY_CHAR && type->base->kind != TY_UCHAR))
+				sema_error(s, init, "string literal can only initialize a character array");
+			else if (type->array_len >= 0 && type->array_len < string_len)
+				sema_error(s, init, "initializer string is too long for character array");
+		} else if (type->kind != TY_POINTER) {
+			sema_error(s, init, "string literal is invalid for this initializer");
+		}
+		return;
+	}
+	if (init->kind == AST_DESIGNATED_INIT) {
+		if (init->u.designated_init.index) {
+			if (type->kind != TY_ARRAY) {
+				sema_error(s, init, "array designator is invalid for this initializer");
+				return;
+			}
+			if (init->u.designated_init.has_index_value && type->array_len >= 0 &&
+			    init->u.designated_init.index_value >= type->array_len)
+				sema_error(s, init, "array designator index exceeds array bounds");
+			validate_initializer(s, type->base, init->u.designated_init.value);
+			return;
+		}
+		if (init->u.designated_init.member_name) {
+			TypeMember *member;
+			if (type->kind != TY_STRUCT && type->kind != TY_UNION) {
+				sema_error(s, init, "member designator is invalid for this initializer");
+				return;
+			}
+			member = type->members;
+			while (member && (!member->name ||
+			       strcmp(member->name, init->u.designated_init.member_name)))
+				member = member->next;
+			if (!member) {
+				sema_error(s, init, "initializer designates an unknown member");
+				return;
+			}
+			validate_initializer(s, member->type, init->u.designated_init.value);
+		}
+		return;
+	}
+	if (init->kind != AST_INIT_LIST) return;
+
+	if (type->kind == TY_ARRAY) {
+		int cursor = 0;
+		AstList *item;
+		for (item = init->u.init_list.items; item; item = item->next) {
+			AstNode *value = item->node;
+			if (value->kind == AST_DESIGNATED_INIT) {
+				validate_initializer(s, type, value);
+				if (value->u.designated_init.has_index_value)
+					cursor = (int)value->u.designated_init.index_value;
+			} else {
+				if (type->array_len >= 0 && cursor >= type->array_len)
+					sema_error(s, value, "excess elements in array initializer");
+				else
+					validate_initializer(s, type->base, value);
+			}
+			cursor++;
+		}
+		return;
+	}
+
+	if (type->kind == TY_STRUCT || type->kind == TY_UNION) {
+		TypeMember *member = type->members;
+		AstList *item;
+		for (item = init->u.init_list.items; item; item = item->next) {
+			AstNode *value = item->node;
+			if (value->kind == AST_DESIGNATED_INIT) {
+				validate_initializer(s, type, value);
+				if (value->u.designated_init.member_name) {
+					member = type->members;
+					while (member && (!member->name ||
+					       strcmp(member->name, value->u.designated_init.member_name)))
+						member = member->next;
+				}
+			} else if (!member) {
+				sema_error(s, value, "excess elements in struct or union initializer");
+			} else {
+				validate_initializer(s, member->type, value);
+			}
+			if (member) member = member->next;
+			if (type->kind == TY_UNION && item->next)
+				sema_error(s, item->next->node, "excess elements in union initializer");
+		}
+		return;
+	}
+
+	if (init->u.init_list.items) {
+		AstList *excess = init->u.init_list.items->next;
+		if (type_is_complex(type) && excess) excess = excess->next;
+		if (excess)
+			sema_error(s, excess->node, "excess elements in scalar initializer");
+	}
+}
+
+static void analyze_vm_bounds(Sema *s, Type *type) {
+	if (!type) return;
+	if (type->kind == TY_ARRAY) {
+		if (type->vla_size) {
+			Type *bound_type = analyze_expr(s, type->vla_size);
+			if (!type_is_integer(bound_type))
+				sema_error(s, type->vla_size,
+				    "variable-length array bound must have integer type");
+		}
+		analyze_vm_bounds(s, type->base);
+	} else if (type->kind == TY_POINTER) {
+		analyze_vm_bounds(s, type->base);
+	}
+}
+
+static void check_function_declaration(Sema *s, AstNode *n, int is_definition) {
+	Symbol *sym;
+	int declared_linkage;
+	if (!n || !n->u.func.name) return;
+	sym = symtab_lookup(s->symtab, n->u.func.name);
+	if (!sym) {
+		sym = symtab_define(s->symtab, n->u.func.name, SYM_FUNC,
+		    n->u.func.func_type);
+		sym->func_label = func_label_for(n->u.func.name, n->u.func.is_extern);
+	}
+	declared_linkage = n->u.func.is_static ? 1 : 2;
+	if (n->u.func.is_extern && sym->linkage) declared_linkage = sym->linkage;
+	if (sym->linkage && sym->linkage != declared_linkage)
+		sema_error(s, n, "conflicting linkage for function declaration");
+	else if (!sym->linkage)
+		sym->linkage = declared_linkage;
+	if (is_definition) {
+		if (sym->has_definition)
+			sema_error(s, n, "redefinition of function");
+		else
+			sym->has_definition = 1;
+	}
+}
+
 static void analyze_decl(Sema *s, AstNode *n, int is_global) {
 	if (!n) return;
 	switch (n->kind) {
 	case AST_VAR_DECL: {
+		n->u.var.init = normalize_initializer(n->u.var.var_type, n->u.var.init);
+		if (type_is_variably_modified(n->u.var.var_type)) {
+			analyze_vm_bounds(s, n->u.var.var_type);
+			if (is_global)
+				sema_error(s, n, "variably modified declaration is only allowed at block scope");
+			if (n->u.var.is_static)
+				sema_error(s, n, "variably modified object cannot have static storage duration");
+			if (n->u.var.is_extern)
+				sema_error(s, n, "variably modified object cannot have linkage");
+			if (n->u.var.var_type->kind == TY_ARRAY &&
+			    n->u.var.var_type->vla_size && n->u.var.init)
+				sema_error(s, n, "variable-length array cannot have an initializer");
+		}
 		Symbol *sym = symtab_lookup_current(s->symtab, n->u.var.name ? n->u.var.name : "");
 		if (!sym && n->u.var.name) {
 			sym = symtab_define(s->symtab, n->u.var.name, SYM_VAR, n->u.var.var_type);
 		}
 		if (sym) {
+			if (is_global) {
+				int declared_linkage = n->u.var.is_static ? 1 : 2;
+				if (n->u.var.is_extern && sym->linkage) declared_linkage = sym->linkage;
+				if (sym->linkage && sym->linkage != declared_linkage)
+					sema_error(s, n, "conflicting linkage for object declaration");
+				else if (!sym->linkage)
+					sym->linkage = declared_linkage;
+				if (n->u.var.init) {
+					if (sym->has_definition)
+						sema_error(s, n, "redefinition of file-scope object");
+					else
+						sym->has_definition = 1;
+				}
+			}
 			sym->is_global = is_global;
+			sym->is_vla = n->u.var.var_type && n->u.var.var_type->kind == TY_ARRAY &&
+			    n->u.var.var_type->vla_size != NULL;
 			if (n->u.var.is_extern) {
 				sym->is_extern = 1;
 				if (!sym->asm_label) sym->asm_label = strdup(n->u.var.name);
@@ -395,16 +789,36 @@ static void analyze_decl(Sema *s, AstNode *n, int is_global) {
 		}
 		if (n->u.var.init) analyze_expr(s, n->u.var.init);
 		if (n->u.var.var_type && n->u.var.var_type->kind == TY_ARRAY &&
+		    n->u.var.var_type->array_len < 0 && n->u.var.init &&
+		    n->u.var.init->kind == AST_STRING_LIT && n->u.var.var_type->base &&
+		    (n->u.var.var_type->base->kind == TY_CHAR ||
+		     n->u.var.var_type->base->kind == TY_UCHAR))
+			n->u.var.var_type->array_len = (int)strlen(n->u.var.init->u.str_lit.value) + 1;
+		if (n->u.var.var_type && n->u.var.var_type->kind == TY_ARRAY &&
 		    n->u.var.var_type->array_len < 0 &&
 		    n->u.var.init && n->u.var.init->kind == AST_INIT_LIST) {
-			n->u.var.var_type->array_len = ast_list_len(n->u.var.init->u.init_list.items);
+			int next_index = 0;
+			int required_len = 0;
+			AstList *item;
+			for (item = n->u.var.init->u.init_list.items; item; item = item->next) {
+				AstNode *init = item->node;
+				if (init->kind == AST_DESIGNATED_INIT && init->u.designated_init.member_name)
+					sema_error(s, init, "member designator is invalid for an array initializer");
+				if (init->kind == AST_DESIGNATED_INIT && init->u.designated_init.has_index_value)
+					next_index = (int)init->u.designated_init.index_value;
+				if (next_index + 1 > required_len) required_len = next_index + 1;
+				next_index++;
+			}
+			n->u.var.var_type->array_len = required_len;
 		}
+		validate_initializer(s, n->u.var.var_type, n->u.var.init);
 		break;
 	}
 	case AST_FUNC_DEF:
 		analyze_func(s, n);
 		break;
 	case AST_FUNC_DECL: {
+		check_function_declaration(s, n, 0);
 		if (n->u.func.name) {
 			Symbol *sym = symtab_lookup(s->symtab, n->u.func.name);
 			if (!sym) {
@@ -419,6 +833,13 @@ static void analyze_decl(Sema *s, AstNode *n, int is_global) {
 	}
 	case AST_TYPEDEF_DECL:
 		if (n->u.typedef_decl.name) {
+			if (type_is_variably_modified(n->u.typedef_decl.alias_type)) {
+				if (is_global)
+					sema_error(s, n,
+					    "variably modified typedef is only allowed at block scope");
+				else
+					analyze_vm_bounds(s, n->u.typedef_decl.alias_type);
+			}
 			Symbol *existing = symtab_lookup_current(s->symtab, n->u.typedef_decl.name);
 			if (!existing) {
 				symtab_define(s->symtab, n->u.typedef_decl.name, SYM_TYPEDEF,
@@ -439,6 +860,7 @@ static void analyze_func(Sema *s, AstNode *n) {
 	Type *ret = n->u.func.func_type ? n->u.func.func_type->base : NULL;
 	Type *saved = s->current_func_ret;
 	s->current_func_ret = ret;
+	check_function_declaration(s, n, 1);
 
 	
 	if (n->u.func.name) {

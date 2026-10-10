@@ -14,6 +14,7 @@ typedef struct {
 	Token    peek;      /* one-token lookahead */
 	int      had_error;
 	SymTab  *symtab;    /* for typedef name disambiguation */
+	const char *current_func_name;
 } Parser;
 
 /*

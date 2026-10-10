@@ -15,6 +15,7 @@ main_:
 	mov a0, t1
 	cal printf
 	mov t0, a0
+	mov a0, 0
 	ret
 
 g___file_pool:	res u32t 160, 0
@@ -1330,7 +1331,7 @@ sbmk "printf(fmt: char*, varargs: [void*]): void"
 ## Additional Implementation Notes:
 ## Supports %d, %i, %f, %s, and %% format specifiers
 printf:
-	vpsh s0..s2
+	vpsh s0..s3
 
 	sub sp, 32
 	mov ea, sp
@@ -1346,19 +1347,22 @@ printf:
 	mov s0, a0
 	mov s1, sp
 	mov s2, 0
+	mov s3, 0
 
 .loop:
 	mov ea, s0
 	lde u8t, t0, 0
 	cmp eq, t0, 0
-	jtr .done
+	jtr .flush_done
 	cmp eq, t0, 37
-	jtr .percent
-	str u8t, __printf_char_buf, t0
-	mov a0, __printf_char_buf
-	syscall SYS_PRINT_STRING
+	jtr .flush_percent
+	cal .buf_char
 	inc s0
 	jmp .loop
+
+.flush_percent:
+	cal .flush_lit
+	# note: fall through to percent intended
 
 .percent:
 	inc s0
@@ -1376,12 +1380,12 @@ printf:
 	jtr .fmt_c
 	cmp eq, t0, 37	
 	jtr .fmt_percent
-	str u8t, __printf_char_buf, 37
-	mov a0, __printf_char_buf
-	syscall SYS_PRINT_STRING
+	mov t0, 37
+	cal .buf_char
 	jmp .loop
 
 .fmt_d:
+	cal .flush_lit
 	mov ea, s1
 	lde i32t, a0, 0
 	add s1, 4
@@ -1390,6 +1394,7 @@ printf:
 	jmp .loop
 
 .fmt_s:
+	cal .flush_lit
 	mov ea, s1
 	lde u32t, t0, 0
 	add s1, 4
@@ -1399,6 +1404,7 @@ printf:
 	jmp .loop
 
 .fmt_f:
+	cal .flush_lit
 	mov ea, s1
 	lde f32t, a0, 0
 	add s1, 4
@@ -1409,28 +1415,54 @@ printf:
 
 .fmt_c:
 	mov ea, s1
-	lde u8t, t0, 0
+	lde u8t, t0, 3						
 	add s1, 4
-	str u8t, __printf_char_buf, t0
-	mov a0, __printf_char_buf
-	syscall SYS_PRINT_STRING
+	cal .buf_char
 	inc s0
 	jmp .loop
 
 .fmt_percent:
-	str u8t, __printf_char_buf, 37
-	mov a0, __printf_char_buf
-	syscall SYS_PRINT_STRING
+	mov t0, 37
+	cal .buf_char
 	inc s0
 	jmp .loop
 
-.done:
+.flush_done:
+	cal .flush_lit
+	jmp @done+
+@done:
 	mov a0, s2
 	add sp, 32
 	vpop s0..s2
 	ret
 
-__printf_char_buf:	emb u8t 0, 0
+# buffer one byte into __printf_lit_buf, flushing first if full
+# s3 is fill pos, safe up to 63 buf chars, 64 kept for null terminator
+# needed for .flush_lit
+.buf_char:
+	cea __printf_lit_buf, s3, 1
+	ste u8t, 0, t0
+	inc s3
+	cmp lt, s3, 63
+	jtr @done+
+	cal .flush_lit
+@done:
+	ret
+
+# null terminates and prints buf, then resets buf, no-op if no buf
+.flush_lit:
+	cmp eq, s3, 0
+	jtr @done+
+	cea __printf_lit_buf, s3, 1
+	mov t1, 0
+	ste u8t, 0, t1
+	mov a0, __printf_lit_buf
+	syscall SYS_PRINT_STRING
+	mov s3, 0
+@done:
+	ret
+
+__printf_lit_buf:	res u8t 64
 
 # sprintf / snprintf
 #

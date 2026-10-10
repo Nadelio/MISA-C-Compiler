@@ -11,6 +11,43 @@ sbmk "main_(): i16t"
 ## Additional Implementation Notes:
 main_:
 	sub sp, 36
+	mov t0, zr
+	add t1, fp, -12
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -11
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -10
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -9
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -8
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -7
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -6
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -5
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -4
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -3
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -2
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -1
+	mov ea, t1
+	ste u8t, 0, t0
 	mov t0, 1.0
 	add t1, fp, -12
 	mov ea, t1
@@ -24,6 +61,42 @@ main_:
 	mov ea, t1
 	ste f32t, 0, t0
 	mov t0, zr
+	add t1, fp, -24
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -23
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -22
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -21
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -20
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -19
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -18
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -17
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -16
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -15
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -14
+	mov ea, t1
+	ste u8t, 0, t0
+	add t1, fp, -13
+	mov ea, t1
+	ste u8t, 0, t0
 	mov t0, 4.0
 	add t1, fp, -24
 	mov ea, t1
@@ -36,7 +109,6 @@ main_:
 	add t1, fp, -16
 	mov ea, t1
 	ste f32t, 0, t0
-	mov t0, zr
 	add t7, fp, -12
 	mov t8, 0
 	mul t8, 4

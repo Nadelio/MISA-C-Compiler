@@ -135,8 +135,18 @@ Symbol *symtab_lookup_tag(SymTab *st, const char *tag, SymKind kind) {
 	return NULL;
 }
 
+Symbol *symtab_lookup_tag_current(SymTab *st, const char *tag, SymKind kind) {
+	unsigned int h = hash_str(tag);
+	Symbol *sym = st->current->buckets[h];
+	while (sym) {
+		if (sym->kind == kind && !strcmp(sym->name, tag)) return sym;
+		sym = sym->next;
+	}
+	return NULL;
+}
+
 Symbol *symtab_define_tag(SymTab *st, const char *tag, SymKind kind, Type *type) {
-	Symbol *existing = symtab_lookup_tag(st, tag, kind);
+	Symbol *existing = symtab_lookup_tag_current(st, tag, kind);
 	if (existing) return existing;
 	return symtab_define(st, tag, kind, type);
 }

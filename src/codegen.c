@@ -87,6 +87,31 @@ static const char *syscall_name_by_id(int id) {
 	return NULL;
 }
 
+static const char *float_unary_instruction(const char *name) {
+	static const struct { const char *name; const char *instruction; } functions[] = {
+		{"sqrt", "fsqrt"}, {"sqrtf", "fsqrt"},
+		{"exp", "fexp"}, {"expf", "fexp"},
+		{"log", "flog"}, {"logf", "flog"},
+		{"sin", "fsin"}, {"sinf", "fsin"},
+		{"cos", "fcos"}, {"cosf", "fcos"},
+		{"tan", "ftan"}, {"tanf", "ftan"},
+		{"asin", "fasin"}, {"asinf", "fasin"},
+		{"acos", "facos"}, {"acosf", "facos"},
+		{"atan", "fatan"}, {"atanf", "fatan"},
+		{"fabs", "fabs"}, {"fabsf", "fabs"}
+	};
+	size_t i;
+	for (i = 0; i < sizeof functions / sizeof functions[0]; i++)
+		if (!strcmp(name, functions[i].name)) return functions[i].instruction;
+	return NULL;
+}
+
+static const char *float_binary_instruction(const char *name) {
+	if (!strcmp(name, "atan2") || !strcmp(name, "atan2f")) return "fatan2";
+	if (!strcmp(name, "pow") || !strcmp(name, "powf")) return "fpow";
+	return NULL;
+}
+
 static void asm_type_add(CodeGen *cg, const char *label, const char *misa_type) {
 	if (cg->asm_type_count >= cg->asm_type_cap) {
 		cg->asm_type_cap = cg->asm_type_cap ? cg->asm_type_cap * 2 : 16;
@@ -244,6 +269,7 @@ typedef struct FrameVar {
 typedef struct {
 	FrameVar *vars;
 	int       total;     
+	int       has_vla;
 } FrameLayout;
 
 static void frame_add(FrameLayout *fl, const char *name, int size, int align) {
@@ -291,13 +317,37 @@ static void frame_free(FrameLayout *fl) {
 
 static void collect_locals(AstNode *n, FrameLayout *fl, int is_param, int *param_idx) {
 	if (!n) return;
+	if (type_is_complex(n->type) && !n->complex_storage_name &&
+	    (n->kind == AST_BINARY || n->kind == AST_UNARY_PRE ||
+	     n->kind == AST_CAST || n->kind == AST_TERNARY ||
+	     n->kind == AST_CALL || n->kind == AST_COMMA_EXPR)) {
+		char name[64];
+		sprintf(name, ".__complex_%d", (*param_idx)++);
+		n->complex_storage_name = strdup(name);
+		frame_add(fl, name, 8, 4);
+	}
+	if (n->kind == AST_COMPOUND_LITERAL) {
+		char name[64];
+		int sz = type_sizeof(n->u.compound_literal.literal_type);
+		if (sz <= 0) sz = 4;
+		sprintf(name, ".__compound_%d", (*param_idx)++);
+		free(n->u.compound_literal.storage_name);
+		n->u.compound_literal.storage_name = strdup(name);
+		frame_add(fl, name, sz, 4);
+		collect_locals(n->u.compound_literal.init, fl, 0, param_idx);
+		return;
+	}
 	if (n->kind == AST_VAR_DECL) {
 		if (!n->u.var.is_extern) {
-			int sz = n->u.var.var_type ? type_sizeof(n->u.var.var_type) : 4;
+			int is_vla = n->u.var.var_type && n->u.var.var_type->kind == TY_ARRAY &&
+			    n->u.var.var_type->vla_size;
+			int sz = is_vla ? 8 : (n->u.var.var_type ? type_sizeof(n->u.var.var_type) : 4);
 			if (sz <= 0) sz = 4;
 			frame_add(fl, n->u.var.name, sz, 4);
+			if (is_vla) fl->has_vla = 1;
 			if (is_param) n->u.var.is_param = 1;
 		}
+		collect_locals(n->u.var.init, fl, 0, param_idx);
 		return;
 	}
 	if (n->kind == AST_BLOCK) {
@@ -311,20 +361,26 @@ static void collect_locals(AstNode *n, FrameLayout *fl, int is_param, int *param
 	
 	switch (n->kind) {
 	case AST_IF:
+		collect_locals(n->u.if_stmt.cond, fl, 0, param_idx);
 		collect_locals(n->u.if_stmt.then_stmt, fl, 0, param_idx);
 		collect_locals(n->u.if_stmt.else_stmt, fl, 0, param_idx);
 		break;
 	case AST_WHILE: case AST_DO_WHILE:
+		collect_locals(n->u.while_stmt.cond, fl, 0, param_idx);
 		collect_locals(n->u.while_stmt.body, fl, 0, param_idx);
 		break;
 	case AST_FOR:
 		collect_locals(n->u.for_stmt.init, fl, 0, param_idx);
+		collect_locals(n->u.for_stmt.cond, fl, 0, param_idx);
+		collect_locals(n->u.for_stmt.incr, fl, 0, param_idx);
 		collect_locals(n->u.for_stmt.body, fl, 0, param_idx);
 		break;
 	case AST_SWITCH:
+		collect_locals(n->u.switch_stmt.expr, fl, 0, param_idx);
 		collect_locals(n->u.switch_stmt.body, fl, 0, param_idx);
 		break;
 	case AST_CASE:
+		collect_locals(n->u.case_stmt.expr, fl, 0, param_idx);
 		collect_locals(n->u.case_stmt.stmt, fl, 0, param_idx);
 		break;
 	case AST_DEFAULT:
@@ -332,6 +388,34 @@ static void collect_locals(AstNode *n, FrameLayout *fl, int is_param, int *param
 		break;
 	case AST_LABEL_STMT:
 		collect_locals(n->u.label_stmt.stmt, fl, 0, param_idx);
+		break;
+	case AST_EXPR_STMT: collect_locals(n->u.expr_stmt.expr, fl, 0, param_idx); break;
+	case AST_RETURN: collect_locals(n->u.ret_stmt.expr, fl, 0, param_idx); break;
+	case AST_ASSIGN: collect_locals(n->u.assign.lhs, fl, 0, param_idx); collect_locals(n->u.assign.rhs, fl, 0, param_idx); break;
+	case AST_BINARY:
+	case AST_COMMA_EXPR: collect_locals(n->u.binary.left, fl, 0, param_idx); collect_locals(n->u.binary.right, fl, 0, param_idx); break;
+	case AST_TERNARY: collect_locals(n->u.ternary.cond, fl, 0, param_idx); collect_locals(n->u.ternary.then_expr, fl, 0, param_idx); collect_locals(n->u.ternary.else_expr, fl, 0, param_idx); break;
+	case AST_CAST: collect_locals(n->u.cast.expr, fl, 0, param_idx); break;
+	case AST_UNARY_PRE:
+	case AST_UNARY_POST: collect_locals(n->u.unary.operand, fl, 0, param_idx); break;
+	case AST_SIZEOF_EXPR: collect_locals(n->u.sizeof_expr.sizeof_expr, fl, 0, param_idx); break;
+	case AST_CALL: {
+		AstList *arg;
+		collect_locals(n->u.call.callee, fl, 0, param_idx);
+		for (arg = n->u.call.args; arg; arg = arg->next) collect_locals(arg->node, fl, 0, param_idx);
+		break;
+	}
+	case AST_SUBSCRIPT: collect_locals(n->u.subscript.base, fl, 0, param_idx); collect_locals(n->u.subscript.index, fl, 0, param_idx); break;
+	case AST_MEMBER:
+	case AST_PTR_MEMBER: collect_locals(n->u.member.object, fl, 0, param_idx); break;
+	case AST_INIT_LIST: {
+		AstList *item;
+		for (item = n->u.init_list.items; item; item = item->next) collect_locals(item->node, fl, 0, param_idx);
+		break;
+	}
+	case AST_DESIGNATED_INIT:
+		collect_locals(n->u.designated_init.index, fl, 0, param_idx);
+		collect_locals(n->u.designated_init.value, fl, 0, param_idx);
 		break;
 	default:
 		break;
@@ -387,7 +471,224 @@ static void cg_cast(CodeGen *cg, Type *from, Type *to, int reg) {
 	}
 }
 
+static TypeMember *cg_find_member(Type *type, const char *name) {
+	TypeMember *member;
+	if (type && type->kind == TY_POINTER) type = type->base;
+	if (!type) return NULL;
+	for (member = type->members; member; member = member->next)
+		if (member->name && name && !strcmp(member->name, name)) return member;
+	return NULL;
+}
+
+static void cg_extract_bit_field(CodeGen *cg, TypeMember *member, int reg) {
+	unsigned long long mask;
+	int shift;
+	if (!member || !member->is_bit_field || member->bit_width <= 0) return;
+	mask = member->bit_width >= 32 ? 0xffffffffULL :
+	    ((1ULL << member->bit_width) - 1ULL);
+	if (member->bit_offset > 0)
+		emit(cg, "srl %s, %s, %d", temp_name(reg), temp_name(reg),
+		    member->bit_offset);
+	emit(cg, "and %s, %s, %llu", temp_name(reg), temp_name(reg), mask);
+	if (!type_is_unsigned(member->type) && member->bit_width < 32) {
+		shift = 32 - member->bit_width;
+		emit(cg, "sll %s, %s, %d", temp_name(reg), temp_name(reg), shift);
+		emit(cg, "sar %s, %s, %d", temp_name(reg), temp_name(reg), shift);
+	}
+}
+
+static void cg_store_bit_field(CodeGen *cg, int address_reg, TypeMember *member,
+    int value_reg) {
+	unsigned long long value_mask;
+	unsigned long long field_mask;
+	int stored = cg_alloc_temp(cg);
+	int clipped = cg_alloc_temp(cg);
+	const char *type_name = type_misa_name(member->type);
+	value_mask = member->bit_width >= 32 ? 0xffffffffULL :
+	    ((1ULL << member->bit_width) - 1ULL);
+	field_mask = value_mask << member->bit_offset;
+	emit(cg, "mov ea, %s", temp_name(address_reg));
+	emit(cg, "lde %s, %s, %d", type_name, temp_name(stored), member->offset);
+	emit(cg, "mov %s, %s", temp_name(clipped), temp_name(value_reg));
+	emit(cg, "and %s, %s, %llu", temp_name(clipped), temp_name(clipped), value_mask);
+	if (member->bit_offset > 0)
+		emit(cg, "sll %s, %s, %d", temp_name(clipped), temp_name(clipped),
+		    member->bit_offset);
+	emit(cg, "and %s, %s, %lld", temp_name(stored), temp_name(stored),
+	    (long long)~field_mask);
+	emit(cg, "orr %s, %s, %s", temp_name(stored), temp_name(stored),
+	    temp_name(clipped));
+	emit(cg, "ste %s, %d, %s", type_name, member->offset, temp_name(stored));
+	cg_free_temp(cg, clipped);
+	cg_free_temp(cg, stored);
+}
+
 static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl);
+static int cg_lvalue_addr(CodeGen *cg, AstNode *n, FrameLayout *fl);
+static int cg_complex_expr(CodeGen *cg, AstNode *n, FrameLayout *fl);
+static void cg_init_object_at_offset(CodeGen *cg, Type *type, AstNode *init,
+	FrameLayout *fl, int base_off);
+
+static void cg_complex_parts(CodeGen *cg, AstNode *n, FrameLayout *fl,
+	int *real_reg, int *imag_reg) {
+	if (n && n->kind == AST_INIT_LIST) {
+		AstList *item = n->u.init_list.items;
+		*real_reg = item ? cg_expr(cg, item->node, fl) : cg_alloc_temp(cg);
+		if (!item) emit(cg, "mov %s, 0.0", temp_name(*real_reg));
+		item = item ? item->next : NULL;
+		*imag_reg = item ? cg_expr(cg, item->node, fl) : cg_alloc_temp(cg);
+		if (!item) emit(cg, "mov %s, 0.0", temp_name(*imag_reg));
+		return;
+	}
+	if (n && type_is_complex(n->type)) {
+		int address = cg_complex_expr(cg, n, fl);
+		*real_reg = cg_alloc_temp(cg);
+		*imag_reg = cg_alloc_temp(cg);
+		emit(cg, "mov ea, %s", temp_name(address));
+		emit(cg, "lde f32t, %s, 0", temp_name(*real_reg));
+		emit(cg, "lde f32t, %s, 4", temp_name(*imag_reg));
+		cg_free_temp(cg, address);
+		return;
+	}
+	*real_reg = cg_expr(cg, n, fl);
+	if (n) cg_cast(cg, n->type, type_make_float(), *real_reg);
+	*imag_reg = cg_alloc_temp(cg);
+	emit(cg, "mov %s, 0.0", temp_name(*imag_reg));
+}
+
+static void cg_store_complex_parts(CodeGen *cg, int address, int real_reg, int imag_reg) {
+	emit(cg, "mov ea, %s", temp_name(address));
+	emit(cg, "ste f32t, 0, %s", temp_name(real_reg));
+	emit(cg, "ste f32t, 4, %s", temp_name(imag_reg));
+}
+
+static int cg_complex_result_address(CodeGen *cg, AstNode *n, FrameLayout *fl) {
+	int result = cg_alloc_temp(cg);
+	FrameVar *slot = frame_find(fl, n->complex_storage_name);
+	emit(cg, "add %s, fp, %d", temp_name(result), slot ? slot->fp_offset : 0);
+	return result;
+}
+
+static int cg_complex_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
+	int result;
+	if (n->kind == AST_IDENT || n->kind == AST_SUBSCRIPT ||
+	    n->kind == AST_MEMBER || n->kind == AST_PTR_MEMBER)
+		return cg_lvalue_addr(cg, n, fl);
+	if (n->kind == AST_COMPOUND_LITERAL) {
+		int address = cg_lvalue_addr(cg, n, fl);
+		int real_reg, imag_reg;
+		cg_complex_parts(cg, n->u.compound_literal.init, fl, &real_reg, &imag_reg);
+		cg_store_complex_parts(cg, address, real_reg, imag_reg);
+		cg_free_temp(cg, real_reg);
+		cg_free_temp(cg, imag_reg);
+		return address;
+	}
+	if (n->kind == AST_ASSIGN) {
+		int address = cg_lvalue_addr(cg, n->u.assign.lhs, fl);
+		int real_reg, imag_reg;
+		cg_complex_parts(cg, n->u.assign.rhs, fl, &real_reg, &imag_reg);
+		cg_store_complex_parts(cg, address, real_reg, imag_reg);
+		cg_free_temp(cg, real_reg);
+		cg_free_temp(cg, imag_reg);
+		return address;
+	}
+	if (n->kind == AST_CALL) {
+		Type *complex_type = n->type;
+		int real_reg;
+		int imag_reg;
+		result = cg_complex_result_address(cg, n, fl);
+		n->type = complex_type->base;
+		real_reg = cg_expr(cg, n, fl);
+		n->type = complex_type;
+		imag_reg = cg_alloc_temp(cg);
+		emit(cg, "mov %s, a1", temp_name(imag_reg));
+		cg_store_complex_parts(cg, result, real_reg, imag_reg);
+		cg_free_temp(cg, real_reg);
+		cg_free_temp(cg, imag_reg);
+		return result;
+	}
+	if (n->kind == AST_COMMA_EXPR) {
+		int discarded = cg_expr(cg, n->u.binary.left, fl);
+		cg_free_temp(cg, discarded);
+		{
+			int real_reg, imag_reg;
+			result = cg_complex_result_address(cg, n, fl);
+			cg_complex_parts(cg, n->u.binary.right, fl, &real_reg, &imag_reg);
+			cg_store_complex_parts(cg, result, real_reg, imag_reg);
+			cg_free_temp(cg, real_reg);
+			cg_free_temp(cg, imag_reg);
+			return result;
+		}
+	}
+	result = cg_complex_result_address(cg, n, fl);
+	if (n->kind == AST_BINARY) {
+		int ar, ai, br, bi;
+		int real_reg = cg_alloc_temp(cg);
+		int imag_reg = cg_alloc_temp(cg);
+		cg_complex_parts(cg, n->u.binary.left, fl, &ar, &ai);
+		cg_complex_parts(cg, n->u.binary.right, fl, &br, &bi);
+		switch (n->u.binary.op) {
+		case TOK_PLUS:
+			emit(cg, "fadd %s, %s, %s", temp_name(real_reg), temp_name(ar), temp_name(br));
+			emit(cg, "fadd %s, %s, %s", temp_name(imag_reg), temp_name(ai), temp_name(bi));
+			break;
+		case TOK_MINUS:
+			emit(cg, "fsub %s, %s, %s", temp_name(real_reg), temp_name(ar), temp_name(br));
+			emit(cg, "fsub %s, %s, %s", temp_name(imag_reg), temp_name(ai), temp_name(bi));
+			break;
+		case TOK_STAR: {
+			int temp = cg_alloc_temp(cg);
+			emit(cg, "fmul %s, %s, %s", temp_name(real_reg), temp_name(ar), temp_name(br));
+			emit(cg, "fmul %s, %s, %s", temp_name(temp), temp_name(ai), temp_name(bi));
+			emit(cg, "fsub %s, %s, %s", temp_name(real_reg), temp_name(real_reg), temp_name(temp));
+			emit(cg, "fmul %s, %s, %s", temp_name(imag_reg), temp_name(ar), temp_name(bi));
+			emit(cg, "fmul %s, %s, %s", temp_name(temp), temp_name(ai), temp_name(br));
+			emit(cg, "fadd %s, %s, %s", temp_name(imag_reg), temp_name(imag_reg), temp_name(temp));
+			cg_free_temp(cg, temp);
+			break;
+		}
+		case TOK_SLASH: {
+			int denominator = cg_alloc_temp(cg);
+			int temp = cg_alloc_temp(cg);
+			emit(cg, "fmul %s, %s, %s", temp_name(denominator), temp_name(br), temp_name(br));
+			emit(cg, "fmul %s, %s, %s", temp_name(temp), temp_name(bi), temp_name(bi));
+			emit(cg, "fadd %s, %s, %s", temp_name(denominator), temp_name(denominator), temp_name(temp));
+			emit(cg, "fmul %s, %s, %s", temp_name(real_reg), temp_name(ar), temp_name(br));
+			emit(cg, "fmul %s, %s, %s", temp_name(temp), temp_name(ai), temp_name(bi));
+			emit(cg, "fadd %s, %s, %s", temp_name(real_reg), temp_name(real_reg), temp_name(temp));
+			emit(cg, "fdiv %s, %s, %s", temp_name(real_reg), temp_name(real_reg), temp_name(denominator));
+			emit(cg, "fmul %s, %s, %s", temp_name(imag_reg), temp_name(ai), temp_name(br));
+			emit(cg, "fmul %s, %s, %s", temp_name(temp), temp_name(ar), temp_name(bi));
+			emit(cg, "fsub %s, %s, %s", temp_name(imag_reg), temp_name(imag_reg), temp_name(temp));
+			emit(cg, "fdiv %s, %s, %s", temp_name(imag_reg), temp_name(imag_reg), temp_name(denominator));
+			cg_free_temp(cg, denominator);
+			cg_free_temp(cg, temp);
+			break;
+		}
+		default:
+			emit(cg, "mov %s, %s", temp_name(real_reg), temp_name(ar));
+			emit(cg, "mov %s, %s", temp_name(imag_reg), temp_name(ai));
+		}
+		cg_store_complex_parts(cg, result, real_reg, imag_reg);
+		cg_free_temp(cg, ar); cg_free_temp(cg, ai);
+		cg_free_temp(cg, br); cg_free_temp(cg, bi);
+		cg_free_temp(cg, real_reg); cg_free_temp(cg, imag_reg);
+		return result;
+	}
+	{
+		AstNode *operand = n->kind == AST_CAST ? n->u.cast.expr : n->u.unary.operand;
+		int real_reg, imag_reg;
+		cg_complex_parts(cg, operand, fl, &real_reg, &imag_reg);
+		if (n->kind == AST_UNARY_PRE && n->u.unary.op == TOK_MINUS) {
+			emit(cg, "fneg %s, %s", temp_name(real_reg), temp_name(real_reg));
+			emit(cg, "fneg %s, %s", temp_name(imag_reg), temp_name(imag_reg));
+		}
+		cg_store_complex_parts(cg, result, real_reg, imag_reg);
+		cg_free_temp(cg, real_reg);
+		cg_free_temp(cg, imag_reg);
+	}
+	return result;
+}
 
 static void cg_compare(CodeGen *cg, int op, Type *lt, Type *rt, int lr, int rr) {
 	const char *la = temp_name(lr), *ra = temp_name(rr);
@@ -499,6 +800,14 @@ static int cg_lvalue_addr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 		cg_free_temp(cg, ptr_r);
 		break;
 	}
+	case AST_COMPOUND_LITERAL: {
+		FrameVar *fv = frame_find(fl, n->u.compound_literal.storage_name);
+		int off = fv ? fv->fp_offset : 0;
+		cg_init_object_at_offset(cg, n->u.compound_literal.literal_type,
+		    n->u.compound_literal.init, fl, off);
+		emit(cg, "add %s, fp, %d", rn, off);
+		break;
+	}
 	default:
 		
 		{
@@ -517,6 +826,7 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 		emit(cg, "mov %s, zr", temp_name(r));
 		return r;
 	}
+	if (type_is_complex(n->type)) return cg_complex_expr(cg, n, fl);
 
 	int r = cg_alloc_temp(cg);
 	const char *rn = temp_name(r);
@@ -572,6 +882,11 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 		if (sym->type && sym->type->kind == TY_ARRAY) {
 			if (sym->is_global) {
 				emit(cg, "tpa %s, %s", rn, sym->asm_label);
+			} else if (sym->is_vla) {
+				FrameVar *fv = frame_find(fl, sym->name);
+				int off = fv ? fv->fp_offset : sym->fp_offset;
+				emit(cg, "mov ea, fp");
+				emit(cg, "lde u32t, %s, %d", rn, off);
 			} else {
 				FrameVar *fv = frame_find(fl, sym->name);
 				int off = fv ? fv->fp_offset : sym->fp_offset;
@@ -678,6 +993,23 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 		int op  = n->u.binary.op;
 		Type *lt = n->u.binary.left->type  ? n->u.binary.left->type  : type_make_int(0);
 		Type *rt = n->u.binary.right->type ? n->u.binary.right->type : type_make_int(0);
+		if ((op == TOK_EQ_EQ || op == TOK_BANG_EQ) &&
+		    (type_is_complex(lt) || type_is_complex(rt))) {
+			int ar, ai, br, bi;
+			int imag_equal = cg_alloc_temp(cg);
+			cg_complex_parts(cg, n->u.binary.left, fl, &ar, &ai);
+			cg_complex_parts(cg, n->u.binary.right, fl, &br, &bi);
+			emit(cg, "cmp feqa, %s, %s", temp_name(ar), temp_name(br));
+			emit(cg, "sel %s, 1, 0", rn);
+			emit(cg, "cmp feqa, %s, %s", temp_name(ai), temp_name(bi));
+			emit(cg, "sel %s, 1, 0", temp_name(imag_equal));
+			emit(cg, "and %s, %s, %s", rn, rn, temp_name(imag_equal));
+			if (op == TOK_BANG_EQ) emit(cg, "xor %s, %s, 1", rn, rn);
+			cg_free_temp(cg, ar); cg_free_temp(cg, ai);
+			cg_free_temp(cg, br); cg_free_temp(cg, bi);
+			cg_free_temp(cg, imag_equal);
+			break;
+		}
 
 		
 		if (op == TOK_AMP_AMP) {
@@ -842,6 +1174,8 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 			cg_free_temp(cg, idx_r);
 		} else if (lhs->kind == AST_MEMBER) {
 			int done = 0;
+			TypeMember *bit_member = cg_find_member(lhs->u.member.object->type,
+			    lhs->u.member.member_name);
 			if (lhs->u.member.object->kind == AST_IDENT) {
 				Symbol *esym = symtab_lookup(cg->symtab, lhs->u.member.object->u.ident.name);
 				if (esym && esym->is_global && esym->is_extern && esym->asm_label) {
@@ -855,6 +1189,11 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 			}
 			if (!done) {
 				int obj_r = cg_lvalue_addr(cg, lhs->u.member.object, fl);
+				if (bit_member && bit_member->is_bit_field) {
+					cg_store_bit_field(cg, obj_r, bit_member, val_r);
+					cg_free_temp(cg, obj_r);
+					done = 1;
+				}
 				Type *st = lhs->u.member.object->type;
 				int off = 0;
 				if (st) {
@@ -866,13 +1205,16 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 						m = m->next;
 					}
 				}
-				emit(cg, "mov ea, %s", temp_name(obj_r));
-				emit(cg, "ste %s, %d, %s", tn, off, temp_name(val_r));
-				cg_free_temp(cg, obj_r);
+				if (!done) {
+					emit(cg, "mov ea, %s", temp_name(obj_r));
+					emit(cg, "ste %s, %d, %s", tn, off, temp_name(val_r));
+					cg_free_temp(cg, obj_r);
+				}
 			}
 		} else if (lhs->kind == AST_PTR_MEMBER) {
 			int obj_r = cg_expr(cg, lhs->u.member.object, fl);
 			Type *st = lhs->u.member.object->type;
+			TypeMember *bit_member = cg_find_member(st, lhs->u.member.member_name);
 			int off = 0;
 			if (st && st->kind == TY_POINTER && st->base) {
 				TypeMember *m = st->base->members;
@@ -883,8 +1225,12 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 					m = m->next;
 				}
 			}
-			emit(cg, "mov ea, %s", temp_name(obj_r));
-			emit(cg, "ste %s, %d, %s", tn, off, temp_name(val_r));
+			if (bit_member && bit_member->is_bit_field)
+				cg_store_bit_field(cg, obj_r, bit_member, val_r);
+			else {
+				emit(cg, "mov ea, %s", temp_name(obj_r));
+				emit(cg, "ste %s, %d, %s", tn, off, temp_name(val_r));
+			}
 			cg_free_temp(cg, obj_r);
 		}
 
@@ -935,10 +1281,34 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 		break;
 
 	case AST_SIZEOF_EXPR:
+		if (n->u.sizeof_expr.sizeof_expr && n->u.sizeof_expr.sizeof_expr->kind == AST_IDENT) {
+			Symbol *sym = symtab_lookup(cg->symtab,
+			    n->u.sizeof_expr.sizeof_expr->u.ident.name);
+			if (sym && sym->is_vla) {
+				FrameVar *fv = frame_find(fl, sym->name);
+				int off = fv ? fv->fp_offset : sym->fp_offset;
+				emit(cg, "mov ea, fp");
+				emit(cg, "lde u32t, %s, %d", rn, off + 4);
+				break;
+			}
+		}
 		emit(cg, "mov %s, %d", rn, n->u.sizeof_expr.sizeof_expr &&
 		    n->u.sizeof_expr.sizeof_expr->type ?
 		    type_sizeof(n->u.sizeof_expr.sizeof_expr->type) : 4);
 		break;
+
+	case AST_COMPOUND_LITERAL: {
+		int ar = cg_lvalue_addr(cg, n, fl);
+		if (n->type && (n->type->kind == TY_ARRAY || n->type->kind == TY_STRUCT ||
+		                n->type->kind == TY_UNION)) {
+			emit(cg, "mov %s, %s", rn, temp_name(ar));
+		} else {
+			emit(cg, "mov ea, %s", temp_name(ar));
+			emit(cg, "lde %s, %s, 0", n->type ? type_misa_name(n->type) : "i32t", rn);
+		}
+		cg_free_temp(cg, ar);
+		break;
+	}
 
 	case AST_SUBSCRIPT: {
 		int base_r = cg_expr(cg, n->u.subscript.base, fl);
@@ -955,6 +1325,8 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 	}
 
 	case AST_MEMBER: {
+		TypeMember *bit_member = cg_find_member(n->u.member.object->type,
+		    n->u.member.member_name);
 		if (n->u.member.object->kind == AST_IDENT) {
 			Symbol *esym = symtab_lookup(cg->symtab, n->u.member.object->u.ident.name);
 			if (esym && esym->is_global && esym->is_extern && esym->asm_label) {
@@ -981,6 +1353,7 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 		emit(cg, "mov ea, %s", temp_name(obj_r));
 		const char *tn = n->type ? type_misa_name(n->type) : "i32t";
 		emit(cg, "lde %s, %s, %d", tn, rn, off);
+		cg_extract_bit_field(cg, bit_member, r);
 		cg_free_temp(cg, obj_r);
 		break;
 	}
@@ -988,6 +1361,7 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 	case AST_PTR_MEMBER: {
 		int ptr_r = cg_expr(cg, n->u.member.object, fl);
 		Type *st  = n->u.member.object->type;
+		TypeMember *bit_member = cg_find_member(st, n->u.member.member_name);
 		int off   = 0;
 		if (st && st->kind == TY_POINTER && st->base) {
 			TypeMember *m = st->base->members;
@@ -1001,6 +1375,7 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 		emit(cg, "mov ea, %s", temp_name(ptr_r));
 		const char *tn = n->type ? type_misa_name(n->type) : "i32t";
 		emit(cg, "lde %s, %s, %d", tn, rn, off);
+		cg_extract_bit_field(cg, bit_member, r);
 		cg_free_temp(cg, ptr_r);
 		break;
 	}
@@ -1025,13 +1400,28 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 			AstNode *anode = arg->node;
 			Type *atype = anode->type;
 			int is_agg = atype && (atype->kind == TY_STRUCT || atype->kind == TY_UNION);
-			if (is_agg) {
+			if (type_is_complex(atype)) {
+				int real_reg, imag_reg;
+				if (argc + 1 >= 16) {
+					fprintf(stderr, "[Error] complex argument exceeds the 16-register argument limit\n");
+					cg->had_error = 1;
+					break;
+				}
+				cg_complex_parts(cg, anode, fl, &real_reg, &imag_reg);
+				arg_regs[argc++] = real_reg;
+				arg_regs[argc++] = imag_reg;
+			} else if (is_agg) {
 				arg_regs[argc] = cg_lvalue_addr(cg, anode, fl);
+				argc++;
 			} else {
 				arg_regs[argc] = cg_expr(cg, anode, fl);
+				argc++;
 			}
-			argc++;
 			arg = arg->next;
+		}
+		if (arg) {
+			fprintf(stderr, "[Error] call exceeds the 16-register argument limit\n");
+			cg->had_error = 1;
 		}
 		
 		for (i = argc - 1; i >= 0; i--) {
@@ -1042,7 +1432,21 @@ static int cg_expr(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 		
 		if (n->u.call.callee->kind == AST_IDENT) {
 			Symbol *sym = symtab_lookup(cg->symtab, n->u.call.callee->u.ident.name);
-			if (sym && sym->builtin_id == BUILTIN_SYSCALL) {
+			const char *unary_float =
+			    float_unary_instruction(n->u.call.callee->u.ident.name);
+			const char *binary_float =
+			    float_binary_instruction(n->u.call.callee->u.ident.name);
+			if (unary_float && argc == 1) {
+				emit(cg, "%s a0, a0", unary_float);
+			} else if (binary_float && argc == 2) {
+				emit(cg, "%s a0, a0, a1", binary_float);
+			} else if ((!strcmp(n->u.call.callee->u.ident.name, "hypot") ||
+			    !strcmp(n->u.call.callee->u.ident.name, "hypotf")) && argc == 2) {
+				emit(cg, "fmul a0, a0, a0");
+				emit(cg, "fmul a1, a1, a1");
+				emit(cg, "fadd a0, a0, a1");
+				emit(cg, "fsqrt a0, a0");
+			} else if (sym && sym->builtin_id == BUILTIN_SYSCALL) {
 				AstNode *num_node = n->u.call.args ? n->u.call.args->node : NULL;
 				const char *sname = NULL;
 				if (num_node) {
@@ -1238,7 +1642,7 @@ static void cg_free_temp_run(CodeGen *cg, int start, int count) {
 	for (j = 0; j < count; j++) cg_free_temp(cg, start + j);
 }
 
-/* Loads `count` consecutive elements starting at `elem` into regs [start, start+count). */
+/* Loads `count` consecutive elements starting at `elem` into regs [start, start+count]. */
 static void cg_vector_load_range(CodeGen *cg, AstNode *elem, FrameLayout *fl,
 	int start, int count, const char *tn, int esz) {
 	int addr = cg_lvalue_addr(cg, elem, fl);
@@ -1311,6 +1715,166 @@ static int cg_try_lower_float_vector(CodeGen *cg, AstList *start, FrameLayout *f
 	return 1;
 }
 
+static int cg_map_record_initializers(Type *type, AstNode *init,
+    TypeMember ***out_members, AstNode ***out_values) {
+	int count = 0;
+	int cursor = 0;
+	int i;
+	TypeMember *member;
+	AstList *item;
+	TypeMember **members;
+	AstNode **values;
+	for (member = type->members; member; member = member->next)
+		if (member->name) count++;
+	members = (TypeMember **)calloc(count > 0 ? count : 1, sizeof(TypeMember *));
+	values = (AstNode **)calloc(count > 0 ? count : 1, sizeof(AstNode *));
+	for (member = type->members, i = 0; member; member = member->next)
+		if (member->name) members[i++] = member;
+	for (item = init->u.init_list.items; item; item = item->next) {
+		AstNode *value = item->node;
+		int target = cursor;
+		if (value->kind == AST_DESIGNATED_INIT) {
+			if (value->u.designated_init.member_name) {
+				for (target = 0; target < count; target++)
+					if (!strcmp(members[target]->name, value->u.designated_init.member_name)) break;
+			}
+			value = value->u.designated_init.value;
+		}
+		if (target >= 0 && target < count) values[target] = value;
+		cursor = target + 1;
+	}
+	*out_members = members;
+	*out_values = values;
+	return count;
+}
+
+static void cg_init_object_at_offset(CodeGen *cg, Type *type, AstNode *init,
+    FrameLayout *fl, int base_off) {
+	if (!type || !init) return;
+	if (type->kind == TY_ARRAY) {
+		int total = type->array_len;
+		int elem_size = type_sizeof(type->base);
+		int cursor = 0;
+		AstList *item;
+		int zr = cg_alloc_temp(cg);
+		int i;
+		if (elem_size <= 0) elem_size = 1;
+		emit(cg, "mov %s, zr", temp_name(zr));
+		for (i = 0; i < total * elem_size; i++) {
+			int ar = cg_alloc_temp(cg);
+			emit(cg, "add %s, fp, %d", temp_name(ar), base_off + i);
+			emit(cg, "mov ea, %s", temp_name(ar));
+			emit(cg, "ste u8t, 0, %s", temp_name(zr));
+			cg_free_temp(cg, ar);
+		}
+		cg_free_temp(cg, zr);
+		if (init->kind == AST_STRING_LIT && type->base &&
+		    (type->base->kind == TY_CHAR || type->base->kind == TY_UCHAR)) {
+			const char *text = init->u.str_lit.value;
+			int text_len = (int)strlen(text) + 1;
+			for (i = 0; i < total && i < text_len; i++) {
+				int ar = cg_alloc_temp(cg);
+				int vr = cg_alloc_temp(cg);
+				emit(cg, "add %s, fp, %d", temp_name(ar), base_off + i);
+				emit(cg, "mov %s, %d", temp_name(vr), (unsigned char)text[i]);
+				emit(cg, "mov ea, %s", temp_name(ar));
+				emit(cg, "ste u8t, 0, %s", temp_name(vr));
+				cg_free_temp(cg, vr);
+				cg_free_temp(cg, ar);
+			}
+			return;
+		}
+		if (init->kind == AST_DESIGNATED_INIT) {
+			int target = init->u.designated_init.has_index_value ?
+			    (int)init->u.designated_init.index_value : -1;
+			if (target >= 0 && target < total)
+				cg_init_object_at_offset(cg, type->base,
+				    init->u.designated_init.value, fl,
+				    base_off + target * elem_size);
+			return;
+		}
+		if (init->kind != AST_INIT_LIST) return;
+		for (item = init->u.init_list.items; item; item = item->next) {
+			AstNode *value = item->node;
+			if (value->kind == AST_DESIGNATED_INIT) {
+				if (value->u.designated_init.has_index_value)
+					cursor = (int)value->u.designated_init.index_value;
+				value = value->u.designated_init.value;
+			}
+			if (cursor >= 0 && cursor < total)
+				cg_init_object_at_offset(cg, type->base, value, fl, base_off + cursor * elem_size);
+			cursor++;
+		}
+		return;
+	}
+	if (type->kind == TY_STRUCT || type->kind == TY_UNION) {
+		TypeMember **members;
+		AstNode **values;
+		int count;
+		int size = type_sizeof(type);
+		int zr = cg_alloc_temp(cg);
+		int i;
+		emit(cg, "mov %s, zr", temp_name(zr));
+		for (i = 0; i < size; i++) {
+			int ar = cg_alloc_temp(cg);
+			emit(cg, "add %s, fp, %d", temp_name(ar), base_off + i);
+			emit(cg, "mov ea, %s", temp_name(ar));
+			emit(cg, "ste u8t, 0, %s", temp_name(zr));
+			cg_free_temp(cg, ar);
+		}
+		cg_free_temp(cg, zr);
+		if (init->kind == AST_DESIGNATED_INIT) {
+			TypeMember *member = type->members;
+			while (member && (!member->name ||
+			       !init->u.designated_init.member_name ||
+			       strcmp(member->name, init->u.designated_init.member_name)))
+				member = member->next;
+			if (member)
+				cg_init_object_at_offset(cg, member->type,
+				    init->u.designated_init.value, fl,
+				    base_off + member->offset);
+			return;
+		}
+		if (init->kind != AST_INIT_LIST) return;
+		count = cg_map_record_initializers(type, init, &members, &values);
+		for (i = 0; i < count; i++) {
+			if (values[i]) {
+				if (members[i]->is_bit_field) {
+					int address = cg_alloc_temp(cg);
+					int value = cg_expr(cg, values[i], fl);
+					emit(cg, "add %s, fp, %d", temp_name(address), base_off);
+					cg_store_bit_field(cg, address, members[i], value);
+					cg_free_temp(cg, value);
+					cg_free_temp(cg, address);
+				} else {
+					cg_init_object_at_offset(cg, members[i]->type, values[i], fl,
+					    base_off + members[i]->offset);
+				}
+				if (type->kind == TY_UNION) break;
+			}
+		}
+		free(members);
+		free(values);
+		return;
+	}
+	{
+		AstNode *value = init;
+		int vr;
+		int ar;
+		if (value->kind == AST_INIT_LIST && value->u.init_list.items)
+			value = value->u.init_list.items->node;
+		if (value->kind == AST_DESIGNATED_INIT) value = value->u.designated_init.value;
+		vr = cg_expr(cg, value, fl);
+		cg_cast(cg, value->type, type, vr);
+		ar = cg_alloc_temp(cg);
+		emit(cg, "add %s, fp, %d", temp_name(ar), base_off);
+		emit(cg, "mov ea, %s", temp_name(ar));
+		emit(cg, "ste %s, 0, %s", type_misa_name(type), temp_name(vr));
+		cg_free_temp(cg, vr);
+		cg_free_temp(cg, ar);
+	}
+}
+
 static void cg_stmt(CodeGen *cg, AstNode *n, FrameLayout *fl);
 
 static void cg_stmt(CodeGen *cg, AstNode *n, FrameLayout *fl) {
@@ -1336,47 +1900,42 @@ static void cg_stmt(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 		break;
 
 	case AST_VAR_DECL: {
-		
-		if (n->u.var.init && n->u.var.name) {
-			if (n->u.var.init->kind == AST_INIT_LIST &&
-			    n->u.var.var_type && n->u.var.var_type->kind == TY_ARRAY) {
+		if (n->u.var.var_type && n->u.var.var_type->kind == TY_ARRAY &&
+		    n->u.var.var_type->vla_size && n->u.var.name) {
+			Symbol *sym = symtab_lookup(cg->symtab, n->u.var.name);
+			FrameVar *fv = frame_find(fl, n->u.var.name);
+			int off = fv ? fv->fp_offset : (sym ? sym->fp_offset : 0);
+			int size_r = cg_expr(cg, n->u.var.var_type->vla_size, fl);
+			int elem_size = type_sizeof(n->u.var.var_type->base);
+			if (elem_size > 1) emit(cg, "mul %s, %d", temp_name(size_r), elem_size);
+			emit(cg, "add %s, %s, 3", temp_name(size_r), temp_name(size_r));
+			emit(cg, "and %s, %s, -4", temp_name(size_r), temp_name(size_r));
+			emit(cg, "sub sp, %s", temp_name(size_r));
+			emit(cg, "mov ea, fp");
+			emit(cg, "ste u32t, %d, sp", off);
+			emit(cg, "ste u32t, %d, %s", off + 4, temp_name(size_r));
+			cg_free_temp(cg, size_r);
+		} else if (n->u.var.init && n->u.var.name && type_is_complex(n->u.var.var_type)) {
+			FrameVar *fv = frame_find(fl, n->u.var.name);
+			int address = cg_alloc_temp(cg);
+			int real_reg, imag_reg;
+			emit(cg, "add %s, fp, %d", temp_name(address), fv ? fv->fp_offset : 0);
+			cg_complex_parts(cg, n->u.var.init, fl, &real_reg, &imag_reg);
+			cg_store_complex_parts(cg, address, real_reg, imag_reg);
+			cg_free_temp(cg, address);
+			cg_free_temp(cg, real_reg);
+			cg_free_temp(cg, imag_reg);
+		} else if (n->u.var.init && n->u.var.name) {
+			if ((n->u.var.init->kind == AST_INIT_LIST ||
+			     n->u.var.init->kind == AST_STRING_LIT) && n->u.var.var_type &&
+			    (n->u.var.var_type->kind == TY_ARRAY ||
+			     n->u.var.var_type->kind == TY_STRUCT ||
+			     n->u.var.var_type->kind == TY_UNION)) {
 				Symbol *sym = symtab_lookup(cg->symtab, n->u.var.name);
-				if (sym) {
-					Type *elem_t = n->u.var.var_type->base;
-					if (!elem_t) elem_t = n->u.var.var_type;
-					const char *elem_misa = type_misa_name(elem_t);
-					int elem_size = type_sizeof(elem_t);
-					if (elem_size <= 0) elem_size = 4;
-					FrameVar *fv = frame_find(fl, n->u.var.name);
-					int base_off = fv ? fv->fp_offset : 0;
-					AstList *items = n->u.var.init->u.init_list.items;
-					int i = 0;
-					while (items) {
-						int vr = cg_expr(cg, items->node, fl);
-						int ar = cg_alloc_temp(cg);
-						emit(cg, "add %s, fp, %d", temp_name(ar), base_off + i * elem_size);
-						emit(cg, "mov ea, %s", temp_name(ar));
-						emit(cg, "ste %s, 0, %s", elem_misa, temp_name(vr));
-						cg_free_temp(cg, vr);
-						cg_free_temp(cg, ar);
-						items = items->next;
-						i++;
-					}
-					{
-						int total = n->u.var.var_type->array_len > i ? n->u.var.var_type->array_len : i;
-						int zr = cg_alloc_temp(cg);
-						emit(cg, "mov %s, zr", temp_name(zr));
-						int j;
-						for (j = i; j < total; j++) {
-							int ar = cg_alloc_temp(cg);
-							emit(cg, "add %s, fp, %d", temp_name(ar), base_off + j * elem_size);
-							emit(cg, "mov ea, %s", temp_name(ar));
-							emit(cg, "ste %s, 0, %s", elem_misa, temp_name(zr));
-							cg_free_temp(cg, ar);
-						}
-						cg_free_temp(cg, zr);
-					}
-				}
+				FrameVar *fv = frame_find(fl, n->u.var.name);
+				int base_off = fv ? fv->fp_offset : (sym ? sym->fp_offset : 0);
+				cg_init_object_at_offset(cg, n->u.var.var_type,
+				    n->u.var.init, fl, base_off);
 			} else {
 				int vr = cg_expr(cg, n->u.var.init, fl);
 				cg_cast(cg, n->u.var.init->type, n->u.var.var_type, vr);
@@ -1526,9 +2085,8 @@ static void cg_stmt(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 				if (bl->node && bl->node->kind == AST_CASE) {
 					case_lbls[ci] = cg_new_label(cg);
 					if (bl->node->u.case_stmt.expr &&
-					    bl->node->u.case_stmt.expr->kind == AST_INT_LIT) {
-						case_vals[ci] = bl->node->u.case_stmt.expr->u.int_lit.value;
-					}
+					    bl->node->u.case_stmt.expr->is_integer_constant)
+						case_vals[ci] = bl->node->u.case_stmt.expr->integer_constant;
 					ci++;
 				}
 				bl = bl->next;
@@ -1578,11 +2136,21 @@ static void cg_stmt(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 
 	case AST_RETURN: {
 		if (n->u.ret_stmt.expr) {
-			int vr = cg_expr(cg, n->u.ret_stmt.expr, fl);
-			emit(cg, "mov a0, %s", temp_name(vr));
-			cg_free_temp(cg, vr);
+			if (type_is_complex(n->u.ret_stmt.expr->type)) {
+				int real_reg, imag_reg;
+				cg_complex_parts(cg, n->u.ret_stmt.expr, fl, &real_reg, &imag_reg);
+				emit(cg, "mov a0, %s", temp_name(real_reg));
+				emit(cg, "mov a1, %s", temp_name(imag_reg));
+				cg_free_temp(cg, real_reg);
+				cg_free_temp(cg, imag_reg);
+			} else {
+				int vr = cg_expr(cg, n->u.ret_stmt.expr, fl);
+				emit(cg, "mov a0, %s", temp_name(vr));
+				cg_free_temp(cg, vr);
+			}
 		}
-		if (fl->total > 0) emit(cg, "add sp, %d", fl->total);
+		if (fl->has_vla) emit(cg, "mov sp, fp");
+		else if (fl->total > 0) emit(cg, "add sp, %d", fl->total);
 		emit(cg, "ret");
 		break;
 	}
@@ -1624,6 +2192,8 @@ static void cg_register_locals(CodeGen *cg, AstNode *n, FrameLayout *fl) {
 			sym = symtab_define(cg->symtab, n->u.var.name,
 			    SYM_VAR, n->u.var.var_type);
 		sym->is_global = 0;
+		sym->is_vla = n->u.var.var_type && n->u.var.var_type->kind == TY_ARRAY &&
+		    n->u.var.var_type->vla_size != NULL;
 		FrameVar *fv = frame_find(fl, n->u.var.name);
 		if (fv) sym->fp_offset = fv->fp_offset;
 		return;
@@ -1776,8 +2346,16 @@ static void cg_func(CodeGen *cg, AstNode *n) {
 			if (sz <= 0) sz = 4;
 			frame_add(&fl, pn->u.var.name, sz, 4);
 		}
-		param_idx++;
+		param_idx += type_is_complex(pn->u.var.var_type) ? 2 : 1;
 		pl = pl->next;
+	}
+	if (n->u.func.func_type && n->u.func.func_type->is_variadic) {
+		int variadic_index;
+		for (variadic_index = param_idx; variadic_index < 16; variadic_index++) {
+			char name[32];
+			sprintf(name, ".__va_%d", variadic_index);
+			frame_add(&fl, name, 4, 4);
+		}
 	}
 	
 	if (n->u.func.body) collect_locals(n->u.func.body, &fl, 0, &param_idx);
@@ -1797,7 +2375,7 @@ static void cg_func(CodeGen *cg, AstNode *n) {
 			FrameVar *fv = frame_find(&fl, pn->u.var.name);
 			if (fv) sym->fp_offset = fv->fp_offset;
 		}
-		ai++;
+		ai += type_is_complex(pn->u.var.var_type) ? 2 : 1;
 		pl = pl->next;
 	}
 
@@ -1824,16 +2402,33 @@ static void cg_func(CodeGen *cg, AstNode *n) {
 			if (sym) {
 				FrameVar *fv = frame_find(&fl, pn->u.var.name);
 				int off = fv ? fv->fp_offset : sym->fp_offset;
-				int scratch = 14;
 				
 				const char *tn = sym->is_param_ptr ? "u32t" :
 				    (pn->u.var.var_type ? type_misa_name(pn->u.var.var_type) : "i32t");
 				emit(cg, "mov ea, fp");
-				emit(cg, "ste %s, %d, %s", tn, off, arg_name(ai));
+				if (type_is_complex(pn->u.var.var_type)) {
+					emit(cg, "ste f32t, %d, %s", off, arg_name(ai));
+					emit(cg, "ste f32t, %d, %s", off + 4, arg_name(ai + 1));
+				} else {
+					emit(cg, "ste %s, %d, %s", tn, off, arg_name(ai));
+				}
 			}
 		}
-		ai++;
+		ai += type_is_complex(pn->u.var.var_type) ? 2 : 1;
 		pl = pl->next;
+	}
+	if (n->u.func.func_type && n->u.func.func_type->is_variadic) {
+		int variadic_index;
+		for (variadic_index = ai; variadic_index < 16; variadic_index++) {
+			char name[32];
+			FrameVar *slot;
+			sprintf(name, ".__va_%d", variadic_index);
+			slot = frame_find(&fl, name);
+			if (slot) {
+				emit(cg, "mov ea, fp");
+				emit(cg, "ste u32t, %d, %s", slot->fp_offset, arg_name(variadic_index));
+			}
+		}
 	}
 
 	cg->frame_size = fl.total;
@@ -1854,12 +2449,127 @@ static void cg_func(CodeGen *cg, AstNode *n) {
 	}
 
 	if (!last_stmt || last_stmt->kind != AST_RETURN) {
-		if (fl.total > 0) emit(cg, "add sp, %d", fl.total);
+		if (!strcmp(n->u.func.name, "main")) emit(cg, "mov a0, 0");
+		if (fl.has_vla) emit(cg, "mov sp, fp");
+		else if (fl.total > 0) emit(cg, "add sp, %d", fl.total);
 		emit(cg, "ret");
 	}
 
 	symtab_pop(cg->symtab);
 	frame_free(&fl);
+}
+
+static void cg_emit_static_object(CodeGen *cg, Type *type, AstNode *init) {
+	int size;
+	if (!type) return;
+	size = type_sizeof(type);
+	if (size <= 0) size = 1;
+
+	if (type->kind == TY_ARRAY) {
+		int total = type->array_len > 0 ? type->array_len : 0;
+		AstNode **values = (AstNode **)calloc(total > 0 ? total : 1, sizeof(AstNode *));
+		int cursor = 0;
+		int i;
+		if (init && init->kind == AST_DESIGNATED_INIT) {
+			if (init->u.designated_init.has_index_value)
+				cursor = (int)init->u.designated_init.index_value;
+			if (cursor >= 0 && cursor < total)
+				values[cursor] = init->u.designated_init.value;
+		} else if (init && init->kind == AST_INIT_LIST) {
+			AstList *item;
+			for (item = init->u.init_list.items; item; item = item->next) {
+				AstNode *value = item->node;
+				if (value->kind == AST_DESIGNATED_INIT) {
+					if (value->u.designated_init.has_index_value)
+						cursor = (int)value->u.designated_init.index_value;
+					value = value->u.designated_init.value;
+				}
+				if (cursor >= 0 && cursor < total) values[cursor] = value;
+				cursor++;
+			}
+		}
+		for (i = 0; i < total; i++)
+			cg_emit_static_object(cg, type->base, values[i]);
+		free(values);
+		return;
+	}
+
+	if (type->kind == TY_STRUCT || type->kind == TY_UNION) {
+		TypeMember **members;
+		AstNode **values;
+		int count = 0;
+		int position = 0;
+		int i;
+		TypeMember *member;
+		for (member = type->members; member; member = member->next) count++;
+		members = (TypeMember **)calloc(count > 0 ? count : 1, sizeof(TypeMember *));
+		values = (AstNode **)calloc(count > 0 ? count : 1, sizeof(AstNode *));
+		for (member = type->members, i = 0; member; member = member->next, i++)
+			members[i] = member;
+		if (init && init->kind == AST_DESIGNATED_INIT) {
+			for (i = 0; i < count; i++) {
+				if (members[i]->name && init->u.designated_init.member_name &&
+				    !strcmp(members[i]->name, init->u.designated_init.member_name)) {
+					values[i] = init->u.designated_init.value;
+					break;
+				}
+			}
+		} else if (init && init->kind == AST_INIT_LIST) {
+			free(members);
+			free(values);
+			count = cg_map_record_initializers(type, init, &members, &values);
+		}
+		for (i = 0; i < count; i++) {
+			int member_size = type_sizeof(members[i]->type);
+			if (members[i]->is_bit_field) {
+				unsigned long long packed = 0;
+				int j = i;
+				while (j < count && members[j]->is_bit_field &&
+				       members[j]->offset == members[i]->offset) {
+					if (values[j] && values[j]->is_integer_constant) {
+						unsigned long long mask = members[j]->bit_width >= 32 ?
+						    0xffffffffULL : ((1ULL << members[j]->bit_width) - 1ULL);
+						packed |= ((unsigned long long)values[j]->integer_constant & mask)
+						    << members[j]->bit_offset;
+					}
+					j++;
+				}
+				if (members[i]->offset > position)
+					fprintf(cg->out, "\tres u8t %d, 0\n",
+					    members[i]->offset - position);
+				fprintf(cg->out, "\temb %s %llu\n",
+				    type_misa_name(members[i]->type), packed);
+				position = members[i]->offset + (member_size > 0 ? member_size : 1);
+				i = j - 1;
+				if (type->kind == TY_UNION) break;
+				continue;
+			}
+			if (type->kind == TY_UNION && !values[i]) continue;
+			if (members[i]->offset > position)
+				fprintf(cg->out, "\tres u8t %d, 0\n", members[i]->offset - position);
+			cg_emit_static_object(cg, members[i]->type, values[i]);
+			position = members[i]->offset + (member_size > 0 ? member_size : 1);
+			if (type->kind == TY_UNION) break;
+		}
+		if (position < size) fprintf(cg->out, "\tres u8t %d, 0\n", size - position);
+		free(members);
+		free(values);
+		return;
+	}
+
+	while (init && init->kind == AST_INIT_LIST)
+		init = init->u.init_list.items ? init->u.init_list.items->node : NULL;
+	while (init && init->kind == AST_DESIGNATED_INIT)
+		init = init->u.designated_init.value;
+	if (init && init->is_integer_constant) {
+		fprintf(cg->out, "\temb %s %lld\n", type_misa_name(type),
+		    init->integer_constant);
+	} else if (init && init->kind == AST_FLOAT_LIT) {
+		fprintf(cg->out, "\temb %s %.10g\n", type_misa_name(type),
+		    init->u.float_lit.value);
+	} else {
+		fprintf(cg->out, "\tres u8t %d, 0\n", size);
+	}
 }
 
 static void cg_global_var(CodeGen *cg, AstNode *n) {
@@ -1882,10 +2592,22 @@ static void cg_global_var(CodeGen *cg, AstNode *n) {
 	
 	int sz = type_sizeof(t);
 	if (sz <= 0) sz = 4;
+	if (n->u.var.init && n->u.var.init->kind == AST_COMPOUND_LITERAL &&
+	    t->kind != TY_POINTER) {
+		fprintf(cg->out, "%s:\n", lbl);
+		cg_emit_static_object(cg, t, n->u.var.init->u.compound_literal.init);
+		return;
+	}
+	if (n->u.var.init && n->u.var.init->kind == AST_INIT_LIST &&
+	    (t->kind == TY_ARRAY || t->kind == TY_STRUCT || t->kind == TY_UNION)) {
+		fprintf(cg->out, "%s:\n", lbl);
+		cg_emit_static_object(cg, t, n->u.var.init);
+		return;
+	}
 
-	if (n->u.var.init && n->u.var.init->kind == AST_INT_LIT) {
+	if (n->u.var.init && n->u.var.init->is_integer_constant) {
 		fprintf(cg->out, "%s:\temb %s %lld\n", lbl,
-		    type_misa_name(t), n->u.var.init->u.int_lit.value);
+		    type_misa_name(t), n->u.var.init->integer_constant);
 	} else if (n->u.var.init && n->u.var.init->kind == AST_FLOAT_LIT) {
 		fprintf(cg->out, "%s:\temb %s %.10g\n", lbl,
 		    type_misa_name(t), n->u.var.init->u.float_lit.value);
@@ -1913,13 +2635,31 @@ static void cg_global_var(CodeGen *cg, AstNode *n) {
 			Type *elem_t = t->base ? t->base : t;
 			fprintf(cg->out, "%s:\temb %s", lbl, type_misa_name(elem_t));
 			AstList *items = n->u.var.init->u.init_list.items;
-			int first = 1;
-			int init_count = 0;
+			int total = t->array_len;
+			int cursor = 0;
+			AstNode **values = (AstNode **)calloc(total > 0 ? total : 1, sizeof(AstNode *));
 			while (items) {
 				AstNode *elem = items->node;
-				if (!first) fprintf(cg->out, ",");
-				if (elem->kind == AST_INT_LIT || elem->kind == AST_CHAR_LIT) {
-					fprintf(cg->out, " %lld", elem->u.int_lit.value);
+				if (elem->kind == AST_DESIGNATED_INIT) {
+					if (elem->u.designated_init.has_index_value)
+						cursor = (int)elem->u.designated_init.index_value;
+					elem = elem->u.designated_init.value;
+				}
+				if (cursor >= 0 && cursor < total) values[cursor] = elem;
+				cursor++;
+				items = items->next;
+			}
+			{
+				int i;
+				for (i = 0; i < total; i++) {
+					AstNode *elem = values[i];
+					if (i > 0) fprintf(cg->out, ",");
+					if (!elem) {
+						fprintf(cg->out, " 0");
+						continue;
+					}
+				if (elem->is_integer_constant) {
+					fprintf(cg->out, " %lld", elem->integer_constant);
 				} else if (elem->kind == AST_FLOAT_LIT) {
 					fprintf(cg->out, " %.10g", elem->u.float_lit.value);
 				} else if (elem->kind == AST_UNARY_PRE && elem->u.unary.op == TOK_MINUS &&
@@ -1933,16 +2673,9 @@ static void cg_global_var(CodeGen *cg, AstNode *n) {
 				} else {
 					fprintf(cg->out, " 0");
 				}
-				first = 0;
-				init_count++;
-				items = items->next;
+				}
 			}
-			{
-				int total = t->array_len > init_count ? t->array_len : init_count;
-				int i;
-				for (i = init_count; i < total; i++)
-					fprintf(cg->out, ", 0");
-			}
+			free(values);
 			fprintf(cg->out, "\n");
 		} else {
 			int count = t->array_len > 0 ? t->array_len : 1;
@@ -1952,6 +2685,35 @@ static void cg_global_var(CodeGen *cg, AstNode *n) {
 			fprintf(cg->out, "%s:\tres %s %d, 0\n", lbl,
 			    type_misa_name(t->base ? t->base : t), count * ((elem_sz + 3) / 4));
 		}
+	} else if ((t->kind == TY_STRUCT || t->kind == TY_UNION) &&
+	           n->u.var.init && n->u.var.init->kind == AST_INIT_LIST) {
+		TypeMember **members;
+		AstNode **values;
+		int count = cg_map_record_initializers(t, n->u.var.init, &members, &values);
+		int position = 0;
+		int i;
+		fprintf(cg->out, "%s:\n", lbl);
+		for (i = 0; i < count; i++) {
+			AstNode *value = values[i];
+			int member_size;
+			if (t->kind == TY_UNION && !value) continue;
+			if (members[i]->offset > position)
+				fprintf(cg->out, "\tres u8t %d, 0\n", members[i]->offset - position);
+			member_size = type_sizeof(members[i]->type);
+			if (member_size <= 0) member_size = 1;
+			fprintf(cg->out, "\temb %s", type_misa_name(members[i]->type));
+			if (value && value->is_integer_constant)
+				fprintf(cg->out, " %lld\n", value->integer_constant);
+			else if (value && value->kind == AST_FLOAT_LIT)
+				fprintf(cg->out, " %.10g\n", value->u.float_lit.value);
+			else
+				fprintf(cg->out, " 0\n");
+			position = members[i]->offset + member_size;
+			if (t->kind == TY_UNION) break;
+		}
+		if (position < sz) fprintf(cg->out, "\tres u8t %d, 0\n", sz - position);
+		free(members);
+		free(values);
 	} else if (t->kind == TY_STRUCT || t->kind == TY_UNION) {
 		fprintf(cg->out, "%s:\tres u32t %d, 0\n", lbl, (sz + 3) / 4);
 	} else {
@@ -2015,6 +2777,8 @@ static void dce_refs(AstNode *n, StrSet *out) {
 	case AST_MEMBER:
 	case AST_PTR_MEMBER:  dce_refs(n->u.member.object, out); break;
 	case AST_INIT_LIST:   { AstList *it = n->u.init_list.items; while (it) { dce_refs(it->node, out); it = it->next; } } break;
+	case AST_DESIGNATED_INIT: dce_refs(n->u.designated_init.index, out); dce_refs(n->u.designated_init.value, out); break;
+	case AST_COMPOUND_LITERAL: dce_refs(n->u.compound_literal.init, out); break;
 	default: break;
 	}
 }
@@ -2071,6 +2835,115 @@ static StrSet dce_live(AstList *decls) {
 	return live;
 }
 
+static int cg_function_provides_definition(AstList *decls, AstNode *definition) {
+	AstList *item;
+	if (!definition || definition->kind != AST_FUNC_DEF) return 0;
+	if (definition->u.func.is_static || !definition->u.func.is_inline ||
+	    definition->u.func.is_extern)
+		return 1;
+	for (item = decls; item; item = item->next) {
+		AstNode *node = item->node;
+		if (!node || (node->kind != AST_FUNC_DECL && node->kind != AST_FUNC_DEF) ||
+		    !node->u.func.name || strcmp(node->u.func.name, definition->u.func.name))
+			continue;
+		if (node != definition && (!node->u.func.is_inline || node->u.func.is_extern))
+			return 1;
+	}
+	return 0;
+}
+
+static int cg_should_emit_global(AstList *decls, AstNode *target) {
+	AstList *it;
+	AstNode *first_tentative = NULL;
+	AstNode *first_definition = NULL;
+	if (!target || target->kind != AST_VAR_DECL || !target->u.var.name)
+		return 0;
+	for (it = decls; it; it = it->next) {
+		AstNode *node = it->node;
+		if (!node || node->kind != AST_VAR_DECL || !node->u.var.name ||
+		    strcmp(node->u.var.name, target->u.var.name))
+			continue;
+		if (node->u.var.init && !node->u.var.is_extern) {
+			if (!first_definition) first_definition = node;
+		} else if (!node->u.var.is_extern && !first_tentative) {
+			first_tentative = node;
+		}
+	}
+	return target == (first_definition ? first_definition : first_tentative);
+}
+
+static void cg_assign_static_compounds(CodeGen *cg, AstNode *node) {
+	if (!node) return;
+	if (node->kind == AST_COMPOUND_LITERAL) {
+		char label[64];
+		if (!node->u.compound_literal.storage_name) {
+			sprintf(label, "__compound_static_%d", cg->label_counter++);
+			node->u.compound_literal.storage_name = strdup(label);
+		}
+		cg_assign_static_compounds(cg, node->u.compound_literal.init);
+		return;
+	}
+	switch (node->kind) {
+	case AST_UNARY_PRE: case AST_UNARY_POST:
+		cg_assign_static_compounds(cg, node->u.unary.operand);
+		break;
+	case AST_CAST:
+		cg_assign_static_compounds(cg, node->u.cast.expr);
+		break;
+	case AST_BINARY: case AST_COMMA_EXPR:
+		cg_assign_static_compounds(cg, node->u.binary.left);
+		cg_assign_static_compounds(cg, node->u.binary.right);
+		break;
+	case AST_TERNARY:
+		cg_assign_static_compounds(cg, node->u.ternary.cond);
+		cg_assign_static_compounds(cg, node->u.ternary.then_expr);
+		cg_assign_static_compounds(cg, node->u.ternary.else_expr);
+		break;
+	case AST_INIT_LIST: {
+		AstList *item;
+		for (item = node->u.init_list.items; item; item = item->next)
+			cg_assign_static_compounds(cg, item->node);
+		break;
+	}
+	case AST_DESIGNATED_INIT:
+		cg_assign_static_compounds(cg, node->u.designated_init.value);
+		break;
+	default:
+		break;
+	}
+}
+
+static AstNode *cg_static_compound_target(AstNode *init) {
+	if (!init) return NULL;
+	if (init->kind == AST_COMPOUND_LITERAL) return init;
+	if (init->kind == AST_UNARY_PRE && init->u.unary.op == TOK_AMPERSAND &&
+	    init->u.unary.operand && init->u.unary.operand->kind == AST_COMPOUND_LITERAL)
+		return init->u.unary.operand;
+	return NULL;
+}
+
+static void cg_emit_static_compounds(CodeGen *cg, AstNode *node) {
+	if (!node) return;
+	if (node->kind == AST_COMPOUND_LITERAL) {
+		fprintf(cg->out, "%s:\n", node->u.compound_literal.storage_name);
+		cg_emit_static_object(cg, node->u.compound_literal.literal_type,
+		    node->u.compound_literal.init);
+		cg_emit_static_compounds(cg, node->u.compound_literal.init);
+		return;
+	}
+	if (node->kind == AST_UNARY_PRE || node->kind == AST_UNARY_POST)
+		cg_emit_static_compounds(cg, node->u.unary.operand);
+	else if (node->kind == AST_CAST)
+		cg_emit_static_compounds(cg, node->u.cast.expr);
+	else if (node->kind == AST_INIT_LIST) {
+		AstList *item;
+		for (item = node->u.init_list.items; item; item = item->next)
+			cg_emit_static_compounds(cg, item->node);
+	} else if (node->kind == AST_DESIGNATED_INIT) {
+		cg_emit_static_compounds(cg, node->u.designated_init.value);
+	}
+}
+
 void codegen_init(CodeGen *cg, FILE *out, SymTab *st) {
 	memset(cg, 0, sizeof(*cg));
 	cg->out    = out;
@@ -2099,6 +2972,8 @@ void codegen_emit(CodeGen *cg, AstNode *unit) {
 	AstList *it = unit->u.unit.decls;
 	while (it) {
 		AstNode *n = it->node;
+		if (n && n->kind == AST_VAR_DECL)
+			cg_assign_static_compounds(cg, n->u.var.init);
 		if (n && n->kind == AST_VAR_DECL && n->u.var.name) {
 			Symbol *sym;
 			sym = symtab_lookup(cg->symtab, n->u.var.name);
@@ -2137,6 +3012,20 @@ void codegen_emit(CodeGen *cg, AstNode *unit) {
 
 	fprintf(cg->out, "bmk \"TOP\"\n");
 	fprintf(cg->out, "_start:\n");
+	it = unit->u.unit.decls;
+	while (it) {
+		AstNode *n = it->node;
+		if (n && n->kind == AST_VAR_DECL && n->u.var.name &&
+		    n->u.var.var_type && n->u.var.var_type->kind == TY_POINTER) {
+			AstNode *compound = cg_static_compound_target(n->u.var.init);
+			if (compound && compound->u.compound_literal.storage_name) {
+				fprintf(cg->out, "\ttpa t0, %s\n",
+				    compound->u.compound_literal.storage_name);
+				fprintf(cg->out, "\tstr u32t, g__%s, t0\n", n->u.var.name);
+			}
+		}
+		it = it->next;
+	}
 	{
 		Symbol *msym = symtab_lookup(cg->symtab, "main");
 		const char *mlbl = (msym && msym->func_label) ? msym->func_label : "main_";
@@ -2150,9 +3039,17 @@ void codegen_emit(CodeGen *cg, AstNode *unit) {
 	it = unit->u.unit.decls;
 	while (it) {
 		AstNode *n = it->node;
-		if (n && n->kind == AST_FUNC_DEF && ss_has(&live, n->u.func.name)) {
+		if (n && n->kind == AST_FUNC_DEF && ss_has(&live, n->u.func.name) &&
+		    cg_function_provides_definition(unit->u.unit.decls, n)) {
 			cg_func(cg, n);
 		}
+		it = it->next;
+	}
+	it = unit->u.unit.decls;
+	while (it) {
+		AstNode *n = it->node;
+		if (n && n->kind == AST_VAR_DECL)
+			cg_emit_static_compounds(cg, n->u.var.init);
 		it = it->next;
 	}
 
@@ -2163,7 +3060,8 @@ void codegen_emit(CodeGen *cg, AstNode *unit) {
 	it = unit->u.unit.decls;
 	while (it) {
 		AstNode *n = it->node;
-		if (n && n->kind == AST_VAR_DECL) {
+		if (n && n->kind == AST_VAR_DECL &&
+		    cg_should_emit_global(unit->u.unit.decls, n)) {
 			cg_global_var(cg, n);
 		}
 		it = it->next;

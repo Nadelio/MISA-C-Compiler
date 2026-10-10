@@ -21,5 +21,6 @@ typedef struct {
 
 void sema_init(Sema *s, SymTab *st);
 void sema_analyze(Sema *s, AstNode *unit);  /* analyze a translation unit */
+int sema_eval_integer_constant(SymTab *symtab, AstNode *node, long long *out);
 
 #endif /* SEMA_H */

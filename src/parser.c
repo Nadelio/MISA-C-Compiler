@@ -2,10 +2,12 @@
 #include <string.h>
 #include <stdio.h>
 #include "parser.h"
+#include "sema.h"
 
 static AstNode *parse_decl(Parser *p, int allow_func_def);
 static AstNode *parse_stmt(Parser *p);
 static AstNode *parse_expr(Parser *p);
+static AstNode *parse_initializer(Parser *p);
 static AstNode *parse_assign_expr(Parser *p);
 static AstNode *parse_ternary(Parser *p);
 static AstNode *parse_lor(Parser *p);
@@ -20,8 +22,9 @@ static AstNode *parse_additive(Parser *p);
 static AstNode *parse_multiplicative(Parser *p);
 static AstNode *parse_unary(Parser *p);
 static AstNode *parse_postfix(Parser *p);
+static AstNode *parse_postfix_suffix(Parser *p, AstNode *base);
 static AstNode *parse_primary(Parser *p);
-static Type    *parse_type_specifier(Parser *p, int *is_typedef_name);
+static Type    *parse_type_specifier(Parser *p, int *has_type_specifier);
 static Type    *parse_declarator(Parser *p, Type *base, char **out_name);
 static Type    *parse_abstract_declarator(Parser *p, Type *base);
 
@@ -76,11 +79,14 @@ static int is_type_start(Parser *p) {
 	case TOK_KW_ENUM:
 	case TOK_KW_CONST:
 	case TOK_KW_VOLATILE:
+	case TOK_KW_INLINE:
 	case TOK_KW_STATIC:
 	case TOK_KW_EXTERN:
 	case TOK_KW_AUTO:
 	case TOK_KW_REGISTER:
 	case TOK_KW_TYPEDEF:
+	case TOK_KW_BOOL:
+	case TOK_KW_COMPLEX:
 		return 1;
 	case TOK_IDENT: {
 		Symbol *sym = symtab_lookup(p->symtab, p->cur.text);
@@ -89,6 +95,19 @@ static int is_type_start(Parser *p) {
 	default:
 		return 0;
 	}
+}
+
+static int type_contains_flexible_array(Type *type) {
+	TypeMember *member;
+	if (!type) return 0;
+	if (type->kind == TY_ARRAY) return type_contains_flexible_array(type->base);
+	if (type->kind != TY_STRUCT) return 0;
+	for (member = type->members; member; member = member->next) {
+		if (member->type && member->type->kind == TY_ARRAY &&
+		    member->type->array_len < 0 && !member->type->vla_size)
+			return 1;
+	}
+	return 0;
 }
 
 static Type *parse_struct_or_union(Parser *p, int is_union) {
@@ -121,13 +140,20 @@ static Type *parse_struct_or_union(Parser *p, int is_union) {
 
 	advance(p);
 
-	t = is_union ? type_make_union(tag) : type_make_struct(tag);
-	t->is_complete = 0;
-
 	if (tag) {
 		SymKind sk = is_union ? SYM_UNION_TAG : SYM_STRUCT_TAG;
-		sym = symtab_define_tag(p->symtab, tag, sk, t);
+		sym = symtab_lookup_tag_current(p->symtab, tag, sk);
+		if (sym) {
+			t = sym->type;
+			if (t->is_complete) parser_error(p, "redefinition of struct or union tag");
+		} else {
+			t = is_union ? type_make_union(tag) : type_make_struct(tag);
+			symtab_define_tag(p->symtab, tag, sk, t);
+		}
+	} else {
+		t = is_union ? type_make_union(NULL) : type_make_struct(NULL);
 	}
+	t->is_complete = 0;
 
 	while (!check(p, TOK_RBRACE) && !check(p, TOK_EOF)) {
 		int dummy;
@@ -138,6 +164,23 @@ static Type *parse_struct_or_union(Parser *p, int is_union) {
 			TypeMember *m = (TypeMember *)calloc(1, sizeof(TypeMember));
 			m->name = mname;
 			m->type = mtype;
+			if (match(p, TOK_COLON)) {
+				long long width = -1;
+				AstNode *width_expr = parse_assign_expr(p);
+				m->is_bit_field = 1;
+				if (!sema_eval_integer_constant(p->symtab, width_expr, &width))
+					parser_error(p, "bit-field width must be an integer constant expression");
+				else if (!type_is_integer(mtype))
+					parser_error(p, "bit-field must have integer or _Bool type");
+				else if (width < 0 || width > type_sizeof(mtype) * 8)
+					parser_error(p, "bit-field width exceeds its declared type");
+				else if (width == 0 && mname)
+					parser_error(p, "zero-width bit-field must be unnamed");
+				m->bit_width = width >= 0 ? (int)width : 0;
+				ast_free(width_expr);
+			} else if (!mname) {
+				parser_error(p, "struct or union member requires a name");
+			}
 			if (!t->members) {
 				t->members = m;
 			} else {
@@ -149,6 +192,51 @@ static Type *parse_struct_or_union(Parser *p, int is_union) {
 		expect(p, TOK_SEMICOLON);
 	}
 	expect(p, TOK_RBRACE);
+	{
+		TypeMember *member;
+		int named_members = 0;
+		for (member = t->members; member; member = member->next) {
+			TypeMember *prior;
+			int is_flexible = member->type && member->type->kind == TY_ARRAY &&
+			    member->type->array_len < 0 && !member->type->vla_size;
+			if (member->name) {
+				named_members++;
+				for (prior = t->members; prior != member; prior = prior->next) {
+					if (prior->name && !strcmp(prior->name, member->name)) {
+						parser_error(p, "duplicate member name in struct or union");
+						break;
+					}
+				}
+			}
+			if (!member->type) continue;
+			if (member->type->kind == TY_VOID || member->type->kind == TY_FUNCTION)
+				parser_error(p, "struct or union member has invalid type");
+			if (type_is_variably_modified(member->type))
+				parser_error(p, "struct or union member cannot have variably modified type");
+			if (is_flexible) {
+				if (is_union || member->next)
+					parser_error(p, "flexible array member must be last in a struct");
+				if (!member->type->base || !type_is_complete(member->type->base))
+					parser_error(p, "flexible array element type must be complete");
+			} else if (!type_is_complete(member->type)) {
+				parser_error(p, "struct or union member has incomplete type");
+			} else if (type_contains_flexible_array(member->type)) {
+				parser_error(p,
+				    "struct containing a flexible array cannot be a member");
+			}
+		}
+		if (named_members == 0)
+			parser_error(p, "struct or union requires at least one named member");
+		if (!is_union && t->members) {
+			TypeMember *last = t->members;
+			while (last->next) last = last->next;
+			if (last->type && last->type->kind == TY_ARRAY &&
+			    last->type->array_len < 0 && !last->type->vla_size &&
+			    named_members < 2)
+				parser_error(p,
+				    "struct with a flexible array member requires another named member");
+		}
+	}
 	t->is_complete = 1;
 	t->size = type_sizeof(t);
 	free(tag);
@@ -190,12 +278,10 @@ static Type *parse_enum_spec(Parser *p) {
 		char *ename = strdup(p->cur.text);
 		advance(p);
 		if (match(p, TOK_ASSIGN)) {
-			if (check(p, TOK_LIT_INT)) {
-				val = p->cur.u.ival;
-				advance(p);
-			} else {
+			AstNode *value_expr = parse_assign_expr(p);
+			if (!sema_eval_integer_constant(p->symtab, value_expr, &val))
 				parser_error(p, "expected integer constant in enum");
-			}
+			ast_free(value_expr);
 		}
 		Symbol *es = symtab_define(p->symtab, ename, SYM_ENUM_CONST, t);
 		es->enum_value = val++;
@@ -207,15 +293,15 @@ static Type *parse_enum_spec(Parser *p) {
 	return t;
 }
 
-static Type *parse_type_specifier(Parser *p, int *is_typedef_name) {
+static Type *parse_type_specifier(Parser *p, int *has_type_specifier) {
 	int is_unsigned = 0, is_signed = 0;
-	int has_void = 0, has_char = 0, has_short = 0, has_int = 0;
-	int has_long = 0, has_float = 0, has_double = 0;
+	int has_void = 0, has_bool = 0, has_char = 0, has_short = 0, has_int = 0;
+	int has_long = 0, has_float = 0, has_double = 0, has_complex = 0;
 	int is_const = 0, is_volatile = 0;
 	int is_static = 0, is_extern = 0;
 	int is_typedef_sc = 0;
 	Type *named = NULL;
-	if (is_typedef_name) *is_typedef_name = 0;
+	if (has_type_specifier) *has_type_specifier = 0;
 
 	for (;;) {
 		switch (p->cur.type) {
@@ -226,26 +312,32 @@ static Type *parse_type_specifier(Parser *p, int *is_typedef_name) {
 		case TOK_KW_AUTO:
 		case TOK_KW_REGISTER: advance(p); break;
 		case TOK_KW_TYPEDEF:  is_typedef_sc = 1; advance(p); break;
-		case TOK_KW_VOID:     has_void   = 1; advance(p); break;
-		case TOK_KW_CHAR:     has_char   = 1; advance(p); break;
-		case TOK_KW_SHORT:    has_short  = 1; advance(p); break;
-		case TOK_KW_INT:      has_int    = 1; advance(p); break;
-		case TOK_KW_LONG:     has_long   = 1; advance(p); break;
-		case TOK_KW_FLOAT:    has_float  = 1; advance(p); break;
-		case TOK_KW_DOUBLE:   has_double = 1; advance(p); break;
-		case TOK_KW_SIGNED:   is_signed  = 1; advance(p); break;
-		case TOK_KW_UNSIGNED: is_unsigned = 1; advance(p); break;
+		case TOK_KW_INLINE:   advance(p); break;
+		case TOK_KW_VOID:     if (has_void++) parser_error(p, "duplicate 'void' type specifier"); if (has_type_specifier) *has_type_specifier = 1; advance(p); break;
+		case TOK_KW_BOOL:     if (has_bool++) parser_error(p, "duplicate '_Bool' type specifier"); if (has_type_specifier) *has_type_specifier = 1; advance(p); break;
+		case TOK_KW_COMPLEX:  if (has_complex++) parser_error(p, "duplicate '_Complex' type specifier"); if (has_type_specifier) *has_type_specifier = 1; advance(p); break;
+		case TOK_KW_CHAR:     if (has_char++) parser_error(p, "duplicate 'char' type specifier"); if (has_type_specifier) *has_type_specifier = 1; advance(p); break;
+		case TOK_KW_SHORT:    if (has_short++) parser_error(p, "duplicate 'short' type specifier"); if (has_type_specifier) *has_type_specifier = 1; advance(p); break;
+		case TOK_KW_INT:      if (has_int++) parser_error(p, "duplicate 'int' type specifier"); if (has_type_specifier) *has_type_specifier = 1; advance(p); break;
+		case TOK_KW_LONG:     if (has_long++) parser_error(p, "long long is not supported by the target"); if (has_type_specifier) *has_type_specifier = 1; advance(p); break;
+		case TOK_KW_FLOAT:    if (has_float++) parser_error(p, "duplicate 'float' type specifier"); if (has_type_specifier) *has_type_specifier = 1; advance(p); break;
+		case TOK_KW_DOUBLE:   if (has_double++) parser_error(p, "duplicate 'double' type specifier"); if (has_type_specifier) *has_type_specifier = 1; advance(p); break;
+		case TOK_KW_SIGNED:   if (is_signed++) parser_error(p, "duplicate 'signed' type specifier"); if (has_type_specifier) *has_type_specifier = 1; advance(p); break;
+		case TOK_KW_UNSIGNED: if (is_unsigned++) parser_error(p, "duplicate 'unsigned' type specifier"); if (has_type_specifier) *has_type_specifier = 1; advance(p); break;
 		case TOK_KW_STRUCT: {
+			if (has_type_specifier) *has_type_specifier = 1;
 			advance(p);
 			named = parse_struct_or_union(p, 0);
 			goto done;
 		}
 		case TOK_KW_UNION: {
+			if (has_type_specifier) *has_type_specifier = 1;
 			advance(p);
 			named = parse_struct_or_union(p, 1);
 			goto done;
 		}
 		case TOK_KW_ENUM: {
+			if (has_type_specifier) *has_type_specifier = 1;
 			advance(p);
 			named = parse_enum_spec(p);
 			goto done;
@@ -254,7 +346,7 @@ static Type *parse_type_specifier(Parser *p, int *is_typedef_name) {
 			Symbol *sym = symtab_lookup(p->symtab, p->cur.text);
 			if (sym && sym->kind == SYM_TYPEDEF) {
 				named = sym->type;
-				if (is_typedef_name) *is_typedef_name = 1;
+				if (has_type_specifier) *has_type_specifier = 1;
 				advance(p);
 				goto done;
 			}
@@ -268,10 +360,37 @@ done:;
 	(void)is_static; (void)is_extern; (void)is_typedef_sc; (void)is_signed;
 
 	Type *t;
+	{
+		int named_count = !!named + !!has_void + !!has_bool + !!has_char + !!has_short +
+		    !!has_float + !!has_double;
+		if (is_signed && is_unsigned)
+			parser_error(p, "both 'signed' and 'unsigned' specified");
+		if (named_count > 1 || (named && (has_int || has_long || has_complex ||
+		    is_signed || is_unsigned)))
+			parser_error(p, "invalid combination of type specifiers");
+		if ((has_void || has_bool || has_float) &&
+		    (has_char || has_short || has_int || has_long || is_signed || is_unsigned))
+			parser_error(p, "invalid combination of type specifiers");
+		if (has_double && (has_char || has_short || has_int || is_signed || is_unsigned))
+			parser_error(p, "invalid combination with 'double'");
+		if (has_char && (has_short || has_int || has_long))
+			parser_error(p, "invalid combination with 'char'");
+		if (has_short && has_long)
+			parser_error(p, "both 'short' and 'long' specified");
+		if (has_complex && !(has_float || has_double))
+			parser_error(p, "_Complex requires float or double");
+		if (has_complex && (has_void || has_bool || has_char || has_short ||
+		    has_int || (has_long && !has_double) || is_signed || is_unsigned))
+			parser_error(p, "invalid type specifiers for '_Complex'");
+	}
 	if (named) {
-		t = named;
+		t = (is_const || is_volatile) ? type_clone(named) : named;
 	} else if (has_void) {
 		t = type_make_void();
+	} else if (has_bool) {
+		t = type_make_char(1);
+	} else if (has_complex) {
+		t = type_make_complex(has_double ? type_make_double() : type_make_float());
 	} else if (has_float) {
 		t = type_make_float();
 	} else if (has_double) {
@@ -295,11 +414,18 @@ static Type *parse_declarator(Parser *p, Type *base, char **out_name) {
 
 	int ptr_depth = 0;
 	int is_const_arr[16];
+	int is_volatile_arr[16];
+	int is_restrict_arr[16];
 	while (check(p, TOK_STAR)) {
 		advance(p);
 		is_const_arr[ptr_depth] = 0;
-		if (check(p, TOK_KW_CONST) || check(p, TOK_KW_VOLATILE)) {
-			is_const_arr[ptr_depth] = 1;
+		is_volatile_arr[ptr_depth] = 0;
+		is_restrict_arr[ptr_depth] = 0;
+		while (check(p, TOK_KW_CONST) || check(p, TOK_KW_VOLATILE) ||
+		       check(p, TOK_KW_RESTRICT)) {
+			if (check(p, TOK_KW_CONST)) is_const_arr[ptr_depth] = 1;
+			if (check(p, TOK_KW_VOLATILE)) is_volatile_arr[ptr_depth] = 1;
+			if (check(p, TOK_KW_RESTRICT)) is_restrict_arr[ptr_depth] = 1;
 			advance(p);
 		}
 		ptr_depth++;
@@ -334,6 +460,8 @@ static Type *parse_declarator(Parser *p, Type *base, char **out_name) {
 	for (ptr_depth--; ptr_depth >= 0; ptr_depth--) {
 		Type *ptr = type_make_pointer(derived);
 		ptr->is_const = is_const_arr[ptr_depth];
+		ptr->is_volatile = is_volatile_arr[ptr_depth];
+		ptr->is_restrict = is_restrict_arr[ptr_depth];
 		derived = ptr;
 	}
 
@@ -341,30 +469,57 @@ static Type *parse_declarator(Parser *p, Type *base, char **out_name) {
 		if (check(p, TOK_LBRACKET)) {
 			advance(p);
 			int len = -1;
+			AstNode *vla_size = NULL;
 			if (!check(p, TOK_RBRACKET)) {
-				if (check(p, TOK_LIT_INT)) {
-					len = (int)p->cur.u.ival;
-					advance(p);
+				long long constant_len;
+				AstNode *size_expr = parse_assign_expr(p);
+				if (sema_eval_integer_constant(p->symtab, size_expr, &constant_len)) {
+					if (constant_len <= 0) parser_error(p, "array bound must be greater than zero");
+					len = (int)constant_len;
+					ast_free(size_expr);
+				} else {
+					vla_size = size_expr;
 				}
 			}
 			expect(p, TOK_RBRACKET);
-			derived = type_make_array(derived, len);
+			derived = vla_size ? type_make_vla(derived, vla_size) : type_make_array(derived, len);
 		} else if (check(p, TOK_LPAREN)) {
 			advance(p);
 			TypeParam *params = NULL, *last_param = NULL;
 			int is_variadic = 0;
+			int has_prototype = check(p, TOK_RPAREN) ? 0 : 1;
+			symtab_push(p->symtab);
 			while (!check(p, TOK_RPAREN) && !check(p, TOK_EOF)) {
 				if (check(p, TOK_ELLIPSIS)) {
 					is_variadic = 1;
 					advance(p);
 					break;
 				}
-				if (!is_type_start(p)) break;
+				if (!is_type_start(p)) {
+					TypeParam *tp;
+					has_prototype = 0;
+					if (!check(p, TOK_IDENT)) {
+						parser_error(p, "expected parameter declaration or identifier");
+						break;
+					}
+					tp = (TypeParam *)calloc(1, sizeof(TypeParam));
+					tp->name = strdup(p->cur.text);
+					tp->type = type_make_int(0);
+					if (!params) params = last_param = tp;
+					else { last_param->next = tp; last_param = tp; }
+					advance(p);
+					if (!match(p, TOK_COMMA)) break;
+					continue;
+				}
 				int dummy;
 				Type *pt  = parse_type_specifier(p, &dummy);
 				char *pn  = NULL;
 				if (!check(p, TOK_RPAREN) && !check(p, TOK_COMMA))
 					pt = parse_declarator(p, pt, &pn);
+				if (pt && pt->kind == TY_ARRAY)
+					pt = type_make_pointer(pt->base);
+				else if (pt && pt->kind == TY_FUNCTION)
+					pt = type_make_pointer(pt);
 				TypeParam *tp = (TypeParam *)calloc(1, sizeof(TypeParam));
 				tp->name = pn;
 				tp->type = pt;
@@ -373,7 +528,14 @@ static Type *parse_declarator(Parser *p, Type *base, char **out_name) {
 				if (!match(p, TOK_COMMA)) break;
 			}
 			expect(p, TOK_RPAREN);
+			symtab_pop(p->symtab);
+			if (params && !params->next && params->type &&
+			    params->type->kind == TY_VOID && !params->name) {
+				free(params);
+				params = NULL;
+			}
 			derived = type_make_function(derived, params, is_variadic);
+			derived->has_prototype = has_prototype;
 		} else {
 			break;
 		}
@@ -571,11 +733,56 @@ static AstNode *parse_stmt(Parser *p) {
 	}
 }
 
+static AstNode *parse_initializer(Parser *p) {
+	int line = p->cur.line;
+	if (match(p, TOK_LBRACE)) {
+		AstNode *list = ast_new(AST_INIT_LIST, line);
+		while (!check(p, TOK_RBRACE) && !check(p, TOK_EOF)) {
+			AstNode *item;
+			if (check(p, TOK_LBRACKET) || check(p, TOK_DOT)) {
+				AstNode *first_designated = NULL;
+				AstNode *last_designated = NULL;
+				while (check(p, TOK_LBRACKET) || check(p, TOK_DOT)) {
+					AstNode *designated = ast_new(AST_DESIGNATED_INIT, p->cur.line);
+					if (match(p, TOK_LBRACKET)) {
+						designated->u.designated_init.index = parse_expr(p);
+						expect(p, TOK_RBRACKET);
+					} else {
+						advance(p);
+						if (!check(p, TOK_IDENT)) {
+							parser_error(p, "expected member name in initializer designator");
+						} else {
+							designated->u.designated_init.member_name = strdup(p->cur.text);
+							advance(p);
+						}
+					}
+					if (last_designated)
+						last_designated->u.designated_init.value = designated;
+					else
+						first_designated = designated;
+					last_designated = designated;
+				}
+				expect(p, TOK_ASSIGN);
+				last_designated->u.designated_init.value = parse_initializer(p);
+				item = first_designated;
+			} else {
+				item = parse_initializer(p);
+			}
+			list->u.init_list.items = ast_list_append(list->u.init_list.items, item);
+			if (!match(p, TOK_COMMA)) break;
+		}
+		expect(p, TOK_RBRACE);
+		return list;
+	}
+	return parse_assign_expr(p);
+}
+
 static AstNode *parse_decl(Parser *p, int allow_func_def) {
 	int    line = p->cur.line;
 	int    is_typedef_sc = 0;
 	int    is_static  = 0;
 	int    is_extern  = 0;
+	int    is_inline  = 0;
 
 	char *doc_brief        = p->cur.doc_brief;        p->cur.doc_brief        = NULL;
 	char *doc_details      = p->cur.doc_details;      p->cur.doc_details      = NULL;
@@ -588,12 +795,15 @@ static AstNode *parse_decl(Parser *p, int allow_func_def) {
 		if (check(p, TOK_KW_TYPEDEF))  { is_typedef_sc = 1; advance(p); }
 		else if (check(p, TOK_KW_STATIC))  { is_static = 1; advance(p); }
 		else if (check(p, TOK_KW_EXTERN))  { is_extern = 1; advance(p); }
+		else if (check(p, TOK_KW_INLINE))  { is_inline = 1; advance(p); }
 		else if (check(p, TOK_KW_AUTO) || check(p, TOK_KW_REGISTER)) advance(p);
 		else break;
 	}
-
-	int dummy;
-	Type *base = parse_type_specifier(p, &dummy);
+	if (is_static && is_extern)
+		parser_error(p, "declaration cannot be both static and extern");
+	int has_type_specifier;
+	Type *base = parse_type_specifier(p, &has_type_specifier);
+	if (!has_type_specifier) parser_error(p, "declaration requires a type specifier in C99");
 
 	if (check(p, TOK_SEMICOLON)) {
 		advance(p);
@@ -608,6 +818,30 @@ static AstNode *parse_decl(Parser *p, int allow_func_def) {
 		first = 0;
 		char *name = NULL;
 		Type *full = parse_declarator(p, base, &name);
+		if (full->kind == TY_FUNCTION && allow_func_def && !full->has_prototype) {
+			while (is_type_start(p)) {
+				int has_parameter_type;
+				Type *parameter_base = parse_type_specifier(p, &has_parameter_type);
+				do {
+					char *parameter_name = NULL;
+					Type *parameter_type = parse_declarator(p, parameter_base, &parameter_name);
+					TypeParam *parameter;
+					if (parameter_type->kind == TY_ARRAY)
+						parameter_type = type_make_pointer(parameter_type->base);
+					else if (parameter_type->kind == TY_FUNCTION)
+						parameter_type = type_make_pointer(parameter_type);
+					for (parameter = full->params; parameter; parameter = parameter->next)
+						if (parameter->name && parameter_name &&
+						    !strcmp(parameter->name, parameter_name)) break;
+					if (!parameter)
+						parser_error(p, "parameter declaration does not match identifier list");
+					else
+						parameter->type = parameter_type;
+					free(parameter_name);
+				} while (match(p, TOK_COMMA));
+				expect(p, TOK_SEMICOLON);
+			}
+		}
 
 		if (is_typedef_sc && name) {
 			AstNode *n = ast_new(AST_TYPEDEF_DECL, line);
@@ -629,6 +863,7 @@ static AstNode *parse_decl(Parser *p, int allow_func_def) {
 			n->u.func.func_type = full;
 			n->u.func.is_static = is_static;
 			n->u.func.is_extern = is_extern;
+			n->u.func.is_inline = is_inline;
 			TypeParam *tp = full->params;
 			while (tp) {
 				AstNode *pn = ast_new(AST_VAR_DECL, line);
@@ -638,8 +873,12 @@ static AstNode *parse_decl(Parser *p, int allow_func_def) {
 				n->u.func.params = ast_list_append(n->u.func.params, pn);
 				tp = tp->next;
 			}
-			Symbol *sym = symtab_define(p->symtab, name, SYM_FUNC, full);
-			sym->func_label = func_label_for(name, is_extern);
+			Symbol *sym = symtab_lookup_current(p->symtab, name);
+			if (sym && (sym->kind != SYM_FUNC ||
+			    !type_declaration_compatible(sym->type, full)))
+				parser_error(p, "conflicting types for function definition");
+			if (!sym) sym = symtab_define(p->symtab, name, SYM_FUNC, full);
+			if (!sym->func_label) sym->func_label = func_label_for(name, is_extern);
 			symtab_push(p->symtab);
 			AstList *pl = n->u.func.params;
 			while (pl) {
@@ -649,6 +888,8 @@ static AstNode *parse_decl(Parser *p, int allow_func_def) {
 				pl = pl->next;
 			}
 			int blk_line = p->cur.line;
+			const char *outer_func_name = p->current_func_name;
+			p->current_func_name = n->u.func.name;
 			expect(p, TOK_LBRACE);
 			AstNode *blk = ast_new(AST_BLOCK, blk_line);
 			blk->u.block.items = NULL;
@@ -657,6 +898,7 @@ static AstNode *parse_decl(Parser *p, int allow_func_def) {
 				if (item) blk->u.block.items = ast_list_append(blk->u.block.items, item);
 			}
 			expect(p, TOK_RBRACE);
+			p->current_func_name = outer_func_name;
 			symtab_pop(p->symtab);
 			n->u.func.body             = blk;
 			n->u.func.doc_brief        = doc_brief;
@@ -687,8 +929,13 @@ static AstNode *parse_decl(Parser *p, int allow_func_def) {
 			n->u.func.func_type = full;
 			n->u.func.is_static = is_static;
 			n->u.func.is_extern = is_extern;
-			Symbol *sym = symtab_define(p->symtab, name, SYM_FUNC, full);
-			sym->func_label = func_label_for(name, is_extern);
+			n->u.func.is_inline = is_inline;
+			Symbol *sym = symtab_lookup_current(p->symtab, name);
+			if (sym && (sym->kind != SYM_FUNC ||
+			    !type_declaration_compatible(sym->type, full)))
+				parser_error(p, "conflicting types for function declaration");
+			if (!sym) sym = symtab_define(p->symtab, name, SYM_FUNC, full);
+			if (!sym->func_label) sym->func_label = func_label_for(name, is_extern);
 			if (!match(p, TOK_COMMA)) {
 				expect(p, TOK_SEMICOLON);
 				return n;
@@ -712,25 +959,23 @@ static AstNode *parse_decl(Parser *p, int allow_func_def) {
 		n->u.var.var_type  = full;
 		n->u.var.is_static = is_static;
 		n->u.var.is_extern = is_extern;
+		if (is_inline) parser_error(p, "inline specifier requires a function declaration");
 		n->u.var.init      = NULL;
-		if (match(p, TOK_ASSIGN)) {
-			if (check(p, TOK_LBRACE)) {
-				int il_line = p->cur.line;
-				advance(p);
-				AstNode *il = ast_new(AST_INIT_LIST, il_line);
-				il->u.init_list.items = NULL;
-				while (!check(p, TOK_RBRACE) && !check(p, TOK_EOF)) {
-					AstNode *elem = parse_assign_expr(p);
-					if (elem) il->u.init_list.items = ast_list_append(il->u.init_list.items, elem);
-					if (!match(p, TOK_COMMA)) break;
-				}
-				expect(p, TOK_RBRACE);
-				n->u.var.init = il;
-			} else {
-				n->u.var.init = parse_assign_expr(p);
+		if (match(p, TOK_ASSIGN)) n->u.var.init = parse_initializer(p);
+		if (name) {
+			Symbol *existing = symtab_lookup_current(p->symtab, name);
+			if (existing && (existing->kind != SYM_VAR ||
+			    !type_declaration_compatible(existing->type, full))) {
+				parser_error(p, "conflicting types for object declaration");
+			} else if (existing && !allow_func_def && !is_extern) {
+				parser_error(p, "redefinition of block-scope object");
+			} else if (!existing) {
+				symtab_define(p->symtab, name, SYM_VAR, full);
+			} else if (existing->type->kind == TY_ARRAY &&
+			           existing->type->array_len < 0 && full->array_len >= 0) {
+				existing->type = full;
 			}
 		}
-		if (name) symtab_define(p->symtab, name, SYM_VAR, full);
 		decls = ast_list_append(decls, n);
 	}
 	expect(p, TOK_SEMICOLON);
@@ -885,6 +1130,12 @@ static AstNode *parse_unary(Parser *p) {
 			ct = parse_abstract_declarator(p, ct);
 			if (check(p, TOK_RPAREN)) {
 				advance(p);
+				if (check(p, TOK_LBRACE)) {
+					AstNode *n = ast_new(AST_COMPOUND_LITERAL, line);
+					n->u.compound_literal.literal_type = ct;
+					n->u.compound_literal.init = parse_initializer(p);
+					return parse_postfix_suffix(p, n);
+				}
 				AstNode *expr = parse_unary(p);
 				AstNode *n = ast_new(AST_CAST, line);
 				n->u.cast.cast_type = ct;
@@ -899,6 +1150,10 @@ static AstNode *parse_unary(Parser *p) {
 
 static AstNode *parse_postfix(Parser *p) {
 	AstNode *base = parse_primary(p);
+	return parse_postfix_suffix(p, base);
+}
+
+static AstNode *parse_postfix_suffix(Parser *p, AstNode *base) {
 	for (;;) {
 		int line = p->cur.line;
 		if (check(p, TOK_LBRACKET)) {
@@ -977,6 +1232,9 @@ static AstNode *parse_primary(Parser *p) {
 	if (check(p, TOK_LIT_INT)) {
 		AstNode *n = ast_new(AST_INT_LIT, line);
 		n->u.int_lit.value = p->cur.u.ival;
+		n->u.int_lit.base = p->cur.number_base;
+		n->u.int_lit.has_unsigned_suffix = p->cur.has_unsigned_suffix;
+		n->u.int_lit.has_long_suffix = p->cur.has_long_suffix;
 		advance(p);
 		return n;
 	}
@@ -984,6 +1242,7 @@ static AstNode *parse_primary(Parser *p) {
 	if (check(p, TOK_LIT_FLOAT)) {
 		AstNode *n = ast_new(AST_FLOAT_LIT, line);
 		n->u.float_lit.value = p->cur.u.fval;
+		n->u.float_lit.has_float_suffix = p->cur.has_float_suffix;
 		advance(p);
 		return n;
 	}
@@ -1012,6 +1271,13 @@ static AstNode *parse_primary(Parser *p) {
 	}
 
 	if (check(p, TOK_IDENT)) {
+		if (!strcmp(p->cur.text, "__func__") && p->current_func_name) {
+			AstNode *n = ast_new(AST_STRING_LIT, line);
+			n->u.str_lit.value = strdup(p->current_func_name);
+			n->u.str_lit.label_id = -1;
+			advance(p);
+			return n;
+		}
 		AstNode *n = ast_new(AST_IDENT, line);
 		n->u.ident.name = strdup(p->cur.text);
 		advance(p);

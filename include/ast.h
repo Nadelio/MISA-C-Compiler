@@ -51,6 +51,7 @@ typedef enum {
 	AST_MEMBER,          /* a.b */
 	AST_PTR_MEMBER,      /* a->b */
 	AST_COMMA_EXPR,
+	AST_COMPOUND_LITERAL,
 
 	/* Atoms */
 	AST_INT_LIT,
@@ -59,8 +60,9 @@ typedef enum {
 	AST_STRING_LIT,
 	AST_IDENT,
 
-	/* Initializer list: { expr, expr, ... } */
-	AST_INIT_LIST
+	/* Initializers */
+	AST_INIT_LIST,
+	AST_DESIGNATED_INIT
 } AstKind;
 
 typedef struct AstNode AstNode;
@@ -84,6 +86,10 @@ struct AstNode {
 	int       line;
 	Type     *type;       /* resolved type (sema) */
 	int       is_lvalue;  /* 1 if addressable (sema) */
+	int       is_bit_field;
+	int       is_integer_constant;
+	long long integer_constant;
+	char     *complex_storage_name;
 
 	union {
 		/* AST_TRANSLATION_UNIT */
@@ -104,6 +110,7 @@ struct AstNode {
 			AstNode *body;        /* AST_BLOCK (NULL for decl) */
 			int      is_static;
 			int      is_extern;
+			int      is_inline;
 			char    *doc_brief;         /* from /// @brief, or NULL */
 			char    *doc_details;       /* from /// @details, or NULL */
 			char   **doc_param_names;   /* from /// @param: names (owned array) */
@@ -264,11 +271,15 @@ struct AstNode {
 		/* AST_INT_LIT / AST_CHAR_LIT */
 		struct {
 			long long value;
+			int base;
+			int has_unsigned_suffix;
+			int has_long_suffix;
 		} int_lit;
 
 		/* AST_FLOAT_LIT */
 		struct {
 			double value;
+			int has_float_suffix;
 		} float_lit;
 
 		/* AST_STRING_LIT */
@@ -286,6 +297,22 @@ struct AstNode {
 		struct {
 			AstList *items;
 		} init_list;
+
+		/* AST_DESIGNATED_INIT */
+		struct {
+			AstNode *index;
+			char    *member_name;
+			AstNode *value;
+			long long index_value;
+			int       has_index_value;
+		} designated_init;
+
+		/* AST_COMPOUND_LITERAL */
+		struct {
+			Type    *literal_type;
+			AstNode *init;
+			char    *storage_name;
+		} compound_literal;
 	} u;
 };
 

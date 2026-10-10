@@ -24,9 +24,11 @@ const char *tok_type_name(TokenType t) {
 	case TOK_KW_FOR:         return "for";
 	case TOK_KW_GOTO:        return "goto";
 	case TOK_KW_IF:          return "if";
+	case TOK_KW_INLINE:      return "inline";
 	case TOK_KW_INT:         return "int";
 	case TOK_KW_LONG:        return "long";
 	case TOK_KW_REGISTER:    return "register";
+	case TOK_KW_RESTRICT:    return "restrict";
 	case TOK_KW_RETURN:      return "return";
 	case TOK_KW_SHORT:       return "short";
 	case TOK_KW_SIGNED:      return "signed";
@@ -40,6 +42,7 @@ const char *tok_type_name(TokenType t) {
 	case TOK_KW_VOID:        return "void";
 	case TOK_KW_VOLATILE:    return "volatile";
 	case TOK_KW_WHILE:       return "while";
+	case TOK_KW_BOOL:        return "_Bool";
 	case TOK_PLUS:           return "+";
 	case TOK_MINUS:          return "-";
 	case TOK_STAR:           return "*";
